@@ -1,9 +1,11 @@
 /*
-Serial BFS for roadNet-CA
+In progress...
+
+Parallel BFS for roadNet-CA
 How to run:
-   Compile: g++ -O2 -std=c++23 -o bfs_serial serial-bfs.cpp
-   Run:     ./bfs_serial ../datasets/roadNet-CA.txt <source_node>
-       ex:  ./bfs_serial ../datasets/roadNet-CA.txt 0
+   Compile: g++ -O2 -std=c++23 -o bfs_parallel parallel-bfs.cpp
+   Run:     ./bfs_parallel ../datasets/roadNet-CA.txt <source_node>
+       ex:  ./bfs_parallel ../datasets/roadNet-CA.txt 0
 */
 
 #include "graph_utils.h"
@@ -13,42 +15,13 @@ How to run:
 #include <string>
 #include <vector>
 
-// BFS for single connected component
-std::vector<int> bfs(const Graph &g, int src) {
-    std::vector<bool> visited(g.num_nodes, false);
-    std::vector<int> res;
-    std::queue<int> queue;
-
-    visited[src] = true;
-    queue.push(src);
-
-    while (!queue.empty()) {
-        int curr = queue.front();
-        queue.pop();
-        res.push_back(curr);
-
-        // visit all the unvisited neighbours of curr node
-        for (long index_for_col_ind = g.row_ptr[curr];
-             index_for_col_ind < g.row_ptr[curr + 1]; index_for_col_ind++) {
-            int neighbor = g.col_ind[index_for_col_ind];
-            if (!visited[neighbor]) {
-                visited[neighbor] = true;
-                queue.push(neighbor);
-            }
-        }
-    }
-
-    return res;
-}
-
 std::vector<int> parallel_bfs(const Graph &g, int src) {
     // TODO: write parallel version
     std::vector<int> res;
     return res;
 }
 
-int main(int argc, char *argv[]) { // argv looks like {./bfs_serial,
-                                   // ../datasets/roadNet-CA.txt, 0}
+int main(int argc, char *argv[]) {
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " <graph_file> <source_node>"
                   << std::endl;
@@ -77,7 +50,7 @@ int main(int argc, char *argv[]) { // argv looks like {./bfs_serial,
     std::cout << "Running serial BFS from source node: " << source << std::endl;
     auto t0 = std::chrono::steady_clock::now();
 
-    std::vector<int> res = bfs(g, source);
+    std::vector<int> res = parallel_bfs(g, source);
 
     auto t1 = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration<double>(t1 - t0).count();
