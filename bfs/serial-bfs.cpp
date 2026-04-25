@@ -1,6 +1,7 @@
 /*
 Serial BFS for roadNet-CA
 How to run:
+    cd bfs
     Compile: g++ -O2 -std=c++23 -o bfs_serial serial-bfs.cpp
     Run:     ./bfs_serial roadNet-CA.txt <source_node>
         ex:  ./bfs_serial roadNet-CA.txt 0
