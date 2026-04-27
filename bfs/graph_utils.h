@@ -1,12 +1,13 @@
 #include <chrono>
 #include <fstream>
+#include <iostream>
 #include <queue>
 #include <string>
 #include <vector>
 
 struct Graph {
-    int num_nodes;
-    int num_edges;
+    uint32_t num_nodes;
+    uint32_t num_edges;
     // CSR storage format
     std::vector<int> col_ind; // each element is a column ID (to)
     std::vector<int> row_ptr; // elements are [start:stop] in col_ind
@@ -85,4 +86,28 @@ Graph load_graph(const std::string &filename) {
     }
 
     return g;
+}
+
+/**
+ * The function prints the distances of every node from the source node.
+ * nodes_to_print is used when the graph is too large to print every value.
+ */
+void print_distances(const std::vector<int> dists, size_t nodes_to_print = 30) {
+    int end = std::min(nodes_to_print, dists.size());
+
+    std::cout << "[";
+    for (int i = 0; i < end - 1; ++i) {
+        std::cout << dists[i] << ", ";
+    }
+    std::cout << dists[end - 1] << "]\n";
+}
+
+int nodes_visited(const std::vector<int> dists) {
+    int visited_ct = 0;
+    for (int i = 0; i < dists.size(); ++i) {
+        if (dists[i] >= 0) {
+            visited_ct++;
+        }
+    }
+    return visited_ct;
 }
