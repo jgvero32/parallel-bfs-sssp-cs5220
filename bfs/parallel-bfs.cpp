@@ -38,6 +38,9 @@ std::vector<int> parallel_bfs(const Graph &g, int src) {
         // Vector-vector multiplication of [each node's outgoing edges] x
         // [current frontier]
         for (int row = 0; row < g.num_nodes; ++row) {
+            if (dists[row] >= 0) { // Skip rows for nodes that've been visited
+                continue;
+            }
             for (int index = g.row_ptr[row]; index < g.row_ptr[row + 1];
                  ++index) {
                 if (frontier[g.col_ind[index]] && dists[row] == -1) {
