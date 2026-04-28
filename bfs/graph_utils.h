@@ -4,6 +4,7 @@
 #include <queue>
 #include <string>
 #include <vector>
+#include <sstream>
 
 struct Graph {
     uint32_t num_nodes;
