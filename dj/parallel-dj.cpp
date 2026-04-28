@@ -12,7 +12,7 @@ How to run:
 #include <unordered_set>
 #include <chrono>
 #include <unordered_map>
-// #include <mpi.h>
+#include <mpi.h>
 
 // Delta-stepping SSSP
 // Buckets: bucket[i] holds nodes with tentative distance in [i*delta, (i+1)*delta)
@@ -36,7 +36,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
             if (new_b < b)
                 b = new_b;
         }
-        cout << "processing bucket " << b << endl;
+        // cout << "processing bucket " << b << endl;
 
         // process
         unordered_set<int> processed_nodes;
@@ -46,11 +46,12 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
             vector<int> snapshot(buckets[b].begin(), buckets[b].end());
             buckets[b].clear();
 
-            // for each node in the bucket snapshot
+// for each node in the bucket snapshot
+#pragma omp parallel for
             for (int node : snapshot)
             {
                 processed_nodes.insert(node);
-                cout << "node " << node << "'s neighbors -----------------\n";
+                // cout << "node " << node << "'s neighbors -----------------\n";
 
                 // go through node's neighbors and relax edges
                 for (long index_for_col_ind = g.row_ptr[node]; index_for_col_ind < g.row_ptr[node + 1]; index_for_col_ind++)
@@ -58,13 +59,13 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
                     int neighbor = g.col_ind[index_for_col_ind];
                     int weight = g.data[index_for_col_ind];
 
-                    cout << "light edge with " << neighbor << " ? ";
+                    // cout << "light edge with " << neighbor << " ? ";
 
                     // skip heavy edges
                     if (weight > delta)
                         continue;
 
-                    cout << "yes\n";
+                    // cout << "yes\n";
 
                     double d_prime = distances[node] + weight;
                     if (d_prime < distances[neighbor])
@@ -84,9 +85,10 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
         // remove empty bucket
         buckets.erase(b);
 
-        cout << "relaxing heavy edges" << endl;
+// cout << "relaxing heavy edges" << endl;
 
-        // relax heavy edges of nodes from bucket (weight > delta)
+// relax heavy edges of nodes from bucket (weight > delta)
+#pragma omp parallel for
         for (int node : processed_nodes)
         {
             if (distances[node] == INF || ((int)distances[node] / delta) != b)
@@ -97,13 +99,13 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
                 int neighbor = g.col_ind[index_for_col_ind];
                 int weight = g.data[index_for_col_ind];
 
-                cout << "heavy edge with " << neighbor << " ? ";
+                // cout << "heavy edge with " << neighbor << " ? ";
 
                 // skip lights edges
                 if (weight <= delta)
                     continue;
 
-                cout << "yes\n";
+                // cout << "yes\n";
 
                 double d_prime = distances[node] + weight;
                 if (d_prime < distances[neighbor])
@@ -154,6 +156,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    // int num_procs, rank;
     // MPI_Init(&argc, &argv);
     // MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
     // MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -176,6 +179,18 @@ int main(int argc, char *argv[])
     cout << "  Elapsed time     : " << elapsed << " seconds\n";
 
     // MPI_Finalize();
+
+    return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    int num_procs, rank;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    MPI_Finalize();
 
     return 0;
 }
