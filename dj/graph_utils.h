@@ -57,11 +57,14 @@ Graph load_graph(const string &filename)
         }
 
         istringstream ss(line); // this turns file text into ints
-        int from, to, w;
-        if (!(ss >> from >> to >> w))
+        int from, to, w = 1;
+
+        if (!(ss >> from >> to))
         { // grab the from/to node numbers and weight
             continue;
         }
+
+        ss >> w;
 
         max_node_id = max(max_node_id, max(from, to));
         if (max_node_id + 1 >
@@ -108,7 +111,7 @@ Graph load_graph(const string &filename)
  * The function prints the distances of every node from the source node.
  * nodes_to_print is used when the graph is too large to print every value.
  */
-void print_distances(const vector<int> dists, size_t nodes_to_print = 30)
+void print_distances(const vector<double> dists, size_t nodes_to_print = 30)
 {
     int end = min(nodes_to_print, dists.size());
 

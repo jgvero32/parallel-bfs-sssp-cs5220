@@ -7,11 +7,6 @@ How to run:
 */
 
 #include "graph_utils.h"
-#include <chrono>
-#include <iostream>
-#include <queue>
-#include <string>
-#include <vector>
 #include <limits>
 
 // SSSP for single connected component
@@ -37,10 +32,11 @@ vector<double> dijkstra(const Graph &g, int src)
             int neighbor = g.col_ind[index_for_col_ind];
             int weight = g.data[index_for_col_ind];
 
-            if (dist + weight < distances[neighbor])
+            double d_prime = distances[node] + weight;
+            if (d_prime < distances[neighbor])
             {
-                distances[neighbor] = dist + weight;
-                pqueue.push({dist + weight, neighbor});
+                distances[neighbor] = d_prime;
+                pqueue.push({d_prime, neighbor});
             }
         }
     }
@@ -92,6 +88,8 @@ int main(int argc, char *argv[])
 
     auto t1 = chrono::steady_clock::now();
     double elapsed = chrono::duration<double>(t1 - t0).count();
+
+    print_distances(res);
 
     cout << "\n----- Serial dijkstra Results -----\n";
     cout << "  Source node      : " << source << endl;
