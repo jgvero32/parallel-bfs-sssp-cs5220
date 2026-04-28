@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) { // argv looks like {./bfs_serial,
     std::cout << "Loading graph from: " << dataset_file_name << std::endl;
     Graph g;
     try {
-        g = load_graph(dataset_file_name);
+        g = load_graph(dataset_file_name, false);
     } catch (const std::exception &e) {
         std::cerr << "Error loading the graph??" << std::endl;
         return 1;
@@ -85,10 +85,13 @@ int main(int argc, char *argv[]) { // argv looks like {./bfs_serial,
 
     std::cout << "\n----- Serial BFS Results -----\n";
     std::cout << "  Source node      : " << source << std::endl;
-    std::cout << "  Nodes visited    : " << nodes_visited(distances) << std::endl;
+    std::cout << "  Nodes visited    : " << nodes_visited(distances)
+              << std::endl;
     std::cout << "  Node ID space    : " << g.num_nodes << " (max_node_id + 1)"
               << std::endl;
     std::cout << "  Elapsed time     : " << elapsed << " seconds\n";
+
+    print_distances(distances, 50);
 
     return 0;
 }
