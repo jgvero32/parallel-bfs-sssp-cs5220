@@ -79,7 +79,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Loading graph from: " << dataset_file_name << std::endl;
     Graph g;
     try {
-        g = load_graph(dataset_file_name);
+        g = load_graph(dataset_file_name, true);
     } catch (const std::exception &e) {
         std::cerr << "Error loading the graph??" << std::endl;
         return 1;

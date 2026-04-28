@@ -4,6 +4,7 @@
 #include <queue>
 #include <string>
 #include <vector>
+#include <sstream>
 
 struct Graph {
     uint32_t num_nodes;
@@ -18,21 +19,27 @@ struct Graph {
     }
 };
 
-// This function reads the file and stores every node edge into an adjacency
-// list The nodeIds in the dataset files are not contiguous, so the adjacency
-// list size needs to be of max_num_nodes (max nodeID + 1) row_ptr is
-// [start:stop] in the col_ind array col_ind contains all the columnIDs, which
-// are just the "to" nodeIds
-//   0 1 2 3 4
-// 0 1   1
-// 1     1
-// 2
-// 3       1 1
-// 4
-
-// row_ptr = {0, 2, 3, 5}
-// column_indices {0, 2, 2, 3, 4}
-Graph load_graph(const std::string &filename) {
+/**
+ * This function reads the file and stores every node edge into an adjacency
+ * list The nodeIds in the dataset files are not contiguous, so the adjacency
+ * list size needs to be of max_num_nodes (max nodeID + 1) row_ptr is
+ * [start:stop] in the col_ind array col_ind contains all the columnIDs, which
+ * are just the "to" nodeIds
+ *
+ * 0 1 2 3 4
+ * 0 1   1
+ * 1     1
+ * 2
+ * 3     1 1
+ * 4
+ *
+ * row_ptr = {0, 2, 3, 5}
+ * column_indices {0, 2, 2, 3, 4}
+ *
+ * transpose: transposing the matrix A is necessary for parallel BFS, because
+ * the new frontier f_{i+1} is produced by A^T*f_{i}
+ */
+Graph load_graph(const std::string &filename, bool transpose) {
     std::ifstream file(filename); // this opens the file
     if (!file.is_open())
         throw std::runtime_error("Error opening file: " + filename);
@@ -59,7 +66,11 @@ Graph load_graph(const std::string &filename) {
             adj.resize(max_node_id + 1);
         }
 
-        adj[from].push_back(to);
+        if (transpose) {
+            adj[to].push_back(from);
+        } else {
+            adj[from].push_back(to);
+        }
     }
 
     Graph g;
