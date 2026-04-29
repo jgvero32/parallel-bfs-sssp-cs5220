@@ -67,8 +67,10 @@ void initialize(const Graph &graph, int source, int rank, int num_procs) {
     }
 
     // Create the first frontier
-    frontier[source] = true;
-    dists[source] = 0;
+    if (start_row <= source && source < end_row) {
+        frontier[source] = true;
+        dists[source] = 0;
+    }
 }
 
 void parallel_bfs(const Graph &g, int rank, int num_procs) {
@@ -80,40 +82,61 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
     */
     if (rank >= g.num_nodes) return;
 
-    std::vector<bool> new_frontier{};
-    new_frontier.reserve(g.num_nodes);
-    for (int i = 0; i < g.num_nodes; ++i) {
-        new_frontier.push_back(false);
+    std::vector<int> new_frontier;
+    new_frontier.resize(g.num_nodes);
+    new_frontier.assign(g.num_nodes, 0);
+    std::vector<int> recv_vals;
+    recv_vals.resize((end_row-start_row)*num_procs);
+    int displacements_rank[num_procs];
+    int row_ct_per_rank[num_procs];
+    for (int i = 0; i < num_procs; ++i) {
+        displacements_rank[i] = (end_row-start_row)*i;
+        row_ct_per_rank[i] = end_row-start_row;
     }
+
 
     int distance = 1;
     while (true) {
-        bool has_frontier = false;
-
         for (int row = start_row; row < end_row; ++row) {
-            for (int index = g.row_ptr[row]; index < g.row_ptr[row + 1];
+            if (frontier[row]) {
+                for (int index = g.row_ptr[row]; index < g.row_ptr[row + 1];
                  ++index) {
-                if (frontier[g.col_ind[index]] && dists[row] == -1) {
-                    new_frontier[row] = true;
-                    dists[row] = distance;
-                    has_frontier = true;
+                    // Add all the neighbors of this node to the new frontier
+                    new_frontier[g.col_ind[index]] = 1;
                 }
             }
         }
 
-        // MPI get counts
-        // MPI send if gt zero
-        // If the new frontier contains any nodes...
-        if (has_frontier) {
-            // MPI all-to-all of the rows in new_frontier belonging to this
-            // thread
+        MPI_Alltoallv(new_frontier.data(), rows_per_proc.data(), displacements.data(),
+            MPI_INT, recv_vals.data(), row_ct_per_rank, displacements_rank,
+            MPI_INT, MPI_COMM_WORLD);
 
-            // Finished processing this layer of nodes, so increment distance
+        int has_frontier = 0;
+        for (int row = start_row; row < end_row; ++row) {
+            frontier[row] = false;
+            for (int i = 0; i < num_procs; ++i) {
+                int offset = row - start_row;
+                // Found unvisited node --> add to local frontier
+                if (recv_vals[i * (end_row - start_row) + offset] == 1 && dists[row] == -1) {
+                    frontier[row] = true;
+                    dists[row] = distance;
+                    has_frontier = 1;
+                    break;
+                }
+            }
+        }
+
+        // Check if any new frontier is non-zero
+        int frontier_nodes;
+        MPI_Allreduce(&has_frontier, &frontier_nodes, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+        if (frontier_nodes > 0) {
+            // Finished processing one layer of nodes, clear the "next" frontier
+            std::fill(new_frontier.begin(), new_frontier.end(), 0);
             distance++;
         } else {
             break;
         }
-        new_frontier.clear();
     }
 }
 
@@ -154,7 +177,9 @@ int main(int argc, char *argv[]) {
     int source = std::stoi(argv[2]);
 
     // load da graph
-    std::cout << "Loading graph from: " << dataset_file_name << std::endl;
+    if (rank == 0) {
+        std::cout << "Loading graph from: " << dataset_file_name << std::endl;
+    }
     Graph g;
     try {
         g = load_graph(dataset_file_name,
@@ -170,13 +195,16 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    initialize(g, source, rank, num_procs);
+    if (rank == 0) {
+        std::cout << "Running parallel BFS from source node: " << source
+            << std::endl;
+    }
 
-    std::cout << "Running parallel BFS from source node: " << source
-              << std::endl;
     auto t0 = std::chrono::steady_clock::now();
 
-    // parallel_bfs(g, rank, num_procs);
+    initialize(g, source, rank, num_procs);
+
+    parallel_bfs(g, rank, num_procs);
 
     gather_result(g.num_nodes, rank, num_procs);
 
