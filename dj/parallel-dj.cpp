@@ -12,13 +12,223 @@ How to run:
 #include <unordered_set>
 #include <chrono>
 #include <unordered_map>
-// #include <mpi.h>
+#include <omp.h>
+#include <random>
 
 // Delta-stepping SSSP
 // Buckets: bucket[i] holds nodes with tentative distance in [i*delta, (i+1)*delta)
 // Light edges: weight <= delta (processed within a bucket)
 // Heavy edges: weight > delta  (processed after bucket is done)
 vector<double> parallel_dijktras(const Graph &g, int src, int delta)
+{
+    vector<double> distances(g.num_nodes, INF);
+    unordered_map<int, unordered_set<int>> buckets;
+    distances[src] = 0;
+    buckets[0].insert(src);
+    int n_threads = omp_get_max_threads();
+
+    double t_parallel = 0, t_merge = 0; // accumulators
+
+    while (!buckets.empty())
+    {
+        int b = buckets.begin()->first;
+        for (auto &[new_b, _] : buckets)
+            if (new_b < b)
+                b = new_b;
+
+        vector<int> processed_nodes;
+        while (!buckets[b].empty())
+        {
+            vector<int> snapshot(buckets[b].begin(), buckets[b].end());
+            buckets[b].clear();
+            vector<vector<pair<int, double>>> local_updates(n_threads);
+
+            double tp0 = omp_get_wtime();
+#pragma omp parallel for
+            for (int i = 0; i < (int)snapshot.size(); i++)
+            {
+                int node = snapshot[i];
+                int tid = omp_get_thread_num();
+                for (long idx = g.row_ptr[node]; idx < g.row_ptr[node + 1]; idx++)
+                {
+                    int neighbor = g.col_ind[idx];
+                    int weight = g.data[idx];
+                    if (weight > delta)
+                        continue;
+                    double d_prime = distances[node] + weight;
+                    if (d_prime < distances[neighbor])
+                        local_updates[tid].push_back({neighbor, d_prime});
+                }
+            }
+            t_parallel += omp_get_wtime() - tp0;
+
+            double tm0 = omp_get_wtime();
+            for (auto &updates : local_updates)
+                for (auto &[neighbor, d_prime] : updates)
+                    if (d_prime < distances[neighbor])
+                    {
+                        if (distances[neighbor] != INF)
+                            buckets[(int)distances[neighbor] / delta].erase(neighbor);
+                        distances[neighbor] = d_prime;
+                        buckets[(int)d_prime / delta].insert(neighbor);
+                    }
+            t_merge += omp_get_wtime() - tm0;
+
+            for (int node : snapshot)
+                processed_nodes.push_back(node);
+        }
+
+        buckets.erase(b);
+
+        // heavy edges — same pattern
+        vector<vector<pair<int, double>>> local_updates(n_threads);
+
+        double tp0 = omp_get_wtime();
+#pragma omp parallel for
+        for (int i = 0; i < (int)processed_nodes.size(); i++)
+        {
+            int node = processed_nodes[i];
+            int tid = omp_get_thread_num();
+            if (distances[node] == INF || ((int)distances[node] / delta) != b)
+                continue;
+            for (long idx = g.row_ptr[node]; idx < g.row_ptr[node + 1]; idx++)
+            {
+                int neighbor = g.col_ind[idx];
+                int weight = g.data[idx];
+                if (weight <= delta)
+                    continue;
+                double d_prime = distances[node] + weight;
+                if (d_prime < distances[neighbor])
+                    local_updates[tid].push_back({neighbor, d_prime});
+            }
+        }
+        t_parallel += omp_get_wtime() - tp0;
+
+        double tm0 = omp_get_wtime();
+        for (auto &updates : local_updates)
+            for (auto &[neighbor, d_prime] : updates)
+                if (d_prime < distances[neighbor])
+                {
+                    if (distances[neighbor] != INF)
+                        buckets[(int)distances[neighbor] / delta].erase(neighbor);
+                    distances[neighbor] = d_prime;
+                    buckets[(int)d_prime / delta].insert(neighbor);
+                }
+        t_merge += omp_get_wtime() - tm0;
+    }
+
+    cout << "  [timing] parallel sections : " << t_parallel << "s\n";
+    cout << "  [timing] serial merge      : " << t_merge << "s\n";
+    cout << "  [timing] parallel fraction : "
+         << (t_parallel / (t_parallel + t_merge)) * 100 << "%\n";
+
+    return distances;
+}
+
+vector<double> parallel_dijktras_v2(const Graph &g, int src, int delta)
+{
+    vector<double> distances(g.num_nodes, INF);
+    unordered_map<int, unordered_set<int>> buckets;
+
+    distances[src] = 0;
+    buckets[0].insert(src);
+
+    int n_threads = omp_get_max_threads();
+
+    while (!buckets.empty())
+    {
+        // determine smallest non-empty bucket
+        int b = buckets.begin()->first;
+        for (auto &[new_b, _] : buckets)
+            if (new_b < b)
+                b = new_b;
+
+        vector<int> processed_nodes;
+        while (!buckets[b].empty())
+        {
+            vector<int> snapshot(buckets[b].begin(), buckets[b].end());
+            buckets[b].clear();
+
+            // per-thread local update buffers (no locks needed in parallel section)
+            vector<vector<pair<int, double>>> local_updates(n_threads);
+
+#pragma omp parallel for
+            for (int i = 0; i < (int)snapshot.size(); i++)
+            {
+                int node = snapshot[i];
+                int tid = omp_get_thread_num();
+
+                for (long idx = g.row_ptr[node]; idx < g.row_ptr[node + 1]; idx++)
+                {
+                    int neighbor = g.col_ind[idx];
+                    int weight = g.data[idx];
+                    if (weight > delta)
+                        continue;
+
+                    double d_prime = distances[node] + weight;
+                    if (d_prime < distances[neighbor])
+                        local_updates[tid].push_back({neighbor, d_prime});
+                }
+            }
+
+            // serial merge
+            for (auto &updates : local_updates)
+                for (auto &[neighbor, d_prime] : updates)
+                    if (d_prime < distances[neighbor])
+                    {
+                        if (distances[neighbor] != INF)
+                            buckets[(int)distances[neighbor] / delta].erase(neighbor);
+                        distances[neighbor] = d_prime;
+                        buckets[(int)d_prime / delta].insert(neighbor);
+                    }
+
+            for (int node : snapshot)
+                processed_nodes.push_back(node);
+        }
+
+        buckets.erase(b);
+
+        // relax heavy edges
+        vector<vector<pair<int, double>>> local_updates(n_threads);
+
+#pragma omp parallel for
+        for (int i = 0; i < (int)processed_nodes.size(); i++)
+        {
+            int node = processed_nodes[i];
+            int tid = omp_get_thread_num();
+
+            if (distances[node] == INF || ((int)distances[node] / delta) != b)
+                continue;
+
+            for (long idx = g.row_ptr[node]; idx < g.row_ptr[node + 1]; idx++)
+            {
+                int neighbor = g.col_ind[idx];
+                int weight = g.data[idx];
+                if (weight <= delta)
+                    continue;
+
+                double d_prime = distances[node] + weight;
+                if (d_prime < distances[neighbor])
+                    local_updates[tid].push_back({neighbor, d_prime});
+            }
+        }
+
+        // serial merge
+        for (auto &updates : local_updates)
+            for (auto &[neighbor, d_prime] : updates)
+                if (d_prime < distances[neighbor])
+                {
+                    if (distances[neighbor] != INF)
+                        buckets[(int)distances[neighbor] / delta].erase(neighbor);
+                    distances[neighbor] = d_prime;
+                    buckets[(int)d_prime / delta].insert(neighbor);
+                }
+    }
+
+    return distances;
+}
+
+vector<double> parallel_dijktras_v1(const Graph &g, int src, int delta)
 {
     vector<double> distances(g.num_nodes, INF);
     unordered_map<int, unordered_set<int>> buckets;
@@ -36,21 +246,23 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
             if (new_b < b)
                 b = new_b;
         }
-        cout << "processing bucket " << b << endl;
+        // cout << "processing bucket " << b << endl;
 
         // process
-        unordered_set<int> processed_nodes;
+        vector<int> processed_nodes;
         while (!buckets[b].empty())
         {
             // take snapshot the current bucket
             vector<int> snapshot(buckets[b].begin(), buckets[b].end());
             buckets[b].clear();
 
-            // for each node in the bucket snapshot
+// for each node in the bucket snapshot
+#pragma omp parallel for
             for (int node : snapshot)
             {
-                processed_nodes.insert(node);
-                cout << "node " << node << "'s neighbors -----------------\n";
+#pragma omp critical
+                processed_nodes.push_back(node);
+                // cout << "node " << node << "'s neighbors -----------------\n";
 
                 // go through node's neighbors and relax edges
                 for (long index_for_col_ind = g.row_ptr[node]; index_for_col_ind < g.row_ptr[node + 1]; index_for_col_ind++)
@@ -58,15 +270,16 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
                     int neighbor = g.col_ind[index_for_col_ind];
                     int weight = g.data[index_for_col_ind];
 
-                    cout << "light edge with " << neighbor << " ? ";
+                    // cout << "light edge with " << neighbor << " ? ";
 
                     // skip heavy edges
                     if (weight > delta)
                         continue;
 
-                    cout << "yes\n";
+                    // cout << "yes\n";
 
                     double d_prime = distances[node] + weight;
+#pragma omp critical
                     if (d_prime < distances[neighbor])
                     {
                         // remove from old bucket if neighbor has been seen before
@@ -84,9 +297,10 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
         // remove empty bucket
         buckets.erase(b);
 
-        cout << "relaxing heavy edges" << endl;
+// cout << "relaxing heavy edges" << endl;
 
-        // relax heavy edges of nodes from bucket (weight > delta)
+// relax heavy edges of nodes from bucket (weight > delta)
+#pragma omp parallel for
         for (int node : processed_nodes)
         {
             if (distances[node] == INF || ((int)distances[node] / delta) != b)
@@ -97,15 +311,16 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
                 int neighbor = g.col_ind[index_for_col_ind];
                 int weight = g.data[index_for_col_ind];
 
-                cout << "heavy edge with " << neighbor << " ? ";
+                // cout << "heavy edge with " << neighbor << " ? ";
 
                 // skip lights edges
                 if (weight <= delta)
                     continue;
 
-                cout << "yes\n";
+                // cout << "yes\n";
 
                 double d_prime = distances[node] + weight;
+#pragma omp critical
                 if (d_prime < distances[neighbor])
                 {
                     // remove from old bucket if neighbor has been seen before
@@ -125,15 +340,17 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
 
 int main(int argc, char *argv[])
 {
-    if (argc < 3)
+    if (argc < 5)
     {
-        cerr << "Usage: " << argv[0] << " <graph_file> <source_node> [delta]" << endl;
+        cerr << "Usage: " << argv[0] << " <graph_file> <source_node> <delta> <numthtreads>" << endl;
         return 1;
     }
 
     const string dataset_file_name = argv[1];
     int source = stoi(argv[2]);
-    int delta = (argc >= 4) ? stoi(argv[3]) : 3; // default delta is 3
+    int delta = stoi(argv[3]); // default delta is 3
+    int num_threads = stoi(argv[4]);
+    omp_set_num_threads(num_threads);
 
     // load da graph
     cout << "Loading graph from: " << dataset_file_name << endl;
@@ -141,6 +358,10 @@ int main(int argc, char *argv[])
     try
     {
         g = load_graph(dataset_file_name);
+        mt19937 rng(42);
+        uniform_int_distribution<int> weight_dist(1, 100);
+        for (int &w : g.data)
+            w = weight_dist(rng);
     }
     catch (const exception &e)
     {
@@ -153,10 +374,6 @@ int main(int argc, char *argv[])
         cerr << "Source node " << source << " out of range [0, " << g.num_nodes << ")\n";
         return 1;
     }
-
-    // MPI_Init(&argc, &argv);
-    // MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
-    // MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     cout << "Running delta-stepping SSSP from source node: " << source << " (delta=" << delta << ")\n";
     auto t0 = chrono::steady_clock::now();
@@ -174,8 +391,6 @@ int main(int argc, char *argv[])
     cout << "  Node ID space    : " << g.num_nodes << " (max_node_id + 1)" << endl;
     cout << "  Delta            : " << delta << "\n";
     cout << "  Elapsed time     : " << elapsed << " seconds\n";
-
-    // MPI_Finalize();
 
     return 0;
 }
