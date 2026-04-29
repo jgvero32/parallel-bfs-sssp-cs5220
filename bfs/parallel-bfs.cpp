@@ -25,6 +25,7 @@ static int start_row;
 static int end_row; // non-inclusive
 static std::vector<int> displacements;
 static std::vector<int> rows_per_proc;
+static std::vector<int> result;
 
 /**
  *
@@ -81,7 +82,6 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
 
     std::vector<bool> new_frontier{};
     new_frontier.reserve(g.num_nodes);
-
     for (int i = 0; i < g.num_nodes; ++i) {
         new_frontier.push_back(false);
     }
@@ -128,7 +128,8 @@ void gather_result(int num_nodes, int rank, int num_procs) {
                                 dists.begin() + end_row);
 
     if (rank == 0) {
-        MPI_Gatherv(rank_dists.data(), rank_dists.size(), MPI_INT, dists.data(),
+        result.resize(num_nodes);
+        MPI_Gatherv(rank_dists.data(), rank_dists.size(), MPI_INT, result.data(),
                     rows_per_proc.data(), displacements.data(), MPI_INT, 0,
                     MPI_COMM_WORLD);
     } else {
@@ -185,12 +186,12 @@ int main(int argc, char *argv[]) {
     if (rank == 0) {
         std::cout << "\n----- Parallel BFS Results -----\n";
         std::cout << "  Source node      : " << source << std::endl;
-        std::cout << "  Nodes visited    : " << nodes_visited(dists) << std::endl;
+        std::cout << "  Nodes visited    : " << nodes_visited(result) << std::endl;
         std::cout << "  Node ID space    : " << g.num_nodes << " (max_node_id + 1)"
                 << std::endl;
         std::cout << "  Elapsed time     : " << elapsed << " seconds\n";
 
-        print_distances(dists, 50);
+        print_distances(result, 50);
     }
 
     MPI_Finalize();
