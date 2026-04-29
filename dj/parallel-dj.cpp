@@ -13,6 +13,7 @@ How to run:
 #include <chrono>
 #include <unordered_map>
 #include <omp.h>
+#include <random>
 
 // Delta-stepping SSSP
 // Buckets: bucket[i] holds nodes with tentative distance in [i*delta, (i+1)*delta)
@@ -251,6 +252,9 @@ int main(int argc, char *argv[])
     try
     {
         g = load_graph(dataset_file_name);
+    	mt19937 rng(42);
+	uniform_int_distribution<int> weight_dist(1, 100);
+	for (int &w : g.data) w = weight_dist(rng);
     }
     catch (const exception &e)
     {
