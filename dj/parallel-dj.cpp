@@ -12,7 +12,7 @@ How to run:
 #include <unordered_set>
 #include <chrono>
 #include <unordered_map>
-#include <mpi.h>
+#include <omp.h>
 
 // Delta-stepping SSSP
 // Buckets: bucket[i] holds nodes with tentative distance in [i*delta, (i+1)*delta)
@@ -50,6 +50,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
 #pragma omp parallel for
             for (int node : snapshot)
             {
+#pragma omp critical
                 processed_nodes.insert(node);
                 // cout << "node " << node << "'s neighbors -----------------\n";
 
@@ -68,6 +69,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
                     // cout << "yes\n";
 
                     double d_prime = distances[node] + weight;
+#pragma omp critical
                     if (d_prime < distances[neighbor])
                     {
                         // remove from old bucket if neighbor has been seen before
@@ -108,6 +110,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
                 // cout << "yes\n";
 
                 double d_prime = distances[node] + weight;
+#pragma omp critical
                 if (d_prime < distances[neighbor])
                 {
                     // remove from old bucket if neighbor has been seen before
@@ -127,15 +130,17 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
 
 int main(int argc, char *argv[])
 {
-    if (argc < 3)
+    if (argc < 5)
     {
-        cerr << "Usage: " << argv[0] << " <graph_file> <source_node> [delta]" << endl;
+        cerr << "Usage: " << argv[0] << " <graph_file> <source_node> <delta> <numthtreads>" << endl;
         return 1;
     }
 
     const string dataset_file_name = argv[1];
     int source = stoi(argv[2]);
-    int delta = (argc >= 4) ? stoi(argv[3]) : 3; // default delta is 3
+    int delta = stoi(argv[3]); // default delta is 3
+    int num_threads = stoi(argv[4]);
+    omp_set_num_threads(num_threads);
 
     // load da graph
     cout << "Loading graph from: " << dataset_file_name << endl;
@@ -156,11 +161,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // int num_procs, rank;
-    // MPI_Init(&argc, &argv);
-    // MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
-    // MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
     cout << "Running delta-stepping SSSP from source node: " << source << " (delta=" << delta << ")\n";
     auto t0 = chrono::steady_clock::now();
 
@@ -177,20 +177,6 @@ int main(int argc, char *argv[])
     cout << "  Node ID space    : " << g.num_nodes << " (max_node_id + 1)" << endl;
     cout << "  Delta            : " << delta << "\n";
     cout << "  Elapsed time     : " << elapsed << " seconds\n";
-
-    // MPI_Finalize();
-
-    return 0;
-}
-
-int main(int argc, char *argv[])
-{
-    int num_procs, rank;
-    MPI_Init(&argc, &argv);
-    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    MPI_Finalize();
 
     return 0;
 }

@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(sssp_bfs)
 
+find_package(OpenMP REQUIRED)
 find_package(MPI REQUIRED)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
@@ -15,7 +16,7 @@ target_include_directories(dj_serial PRIVATE dj/)
 # Parallel delta-stepping
 add_executable(dj_parallel dj/parallel-dj.cpp)
 target_include_directories(dj_parallel PRIVATE dj/)
-target_link_libraries(dj_parallel MPI::MPI_CXX)
+target_link_libraries(dj_parallel OpenMP::OpenMP_CXX)
 
 # Serial BFS
 add_executable(bfs_serial bfs/serial-bfs.cpp)
