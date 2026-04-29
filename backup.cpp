@@ -23,8 +23,8 @@ How to run:
 
 // Stores the distances from source node
 static std::vector<int> dists;
-// This rank's local frontier (contains node ids in the frontier)
-static std::vector<int> frontier;
+// This rank's local frontier
+static std::vector<bool> frontier;
 static int start_row;
 static int end_row; // non-inclusive
 static std::vector<int> displacements;
@@ -39,8 +39,10 @@ void initialize(const Graph &graph, int source, int rank, int num_procs) {
         return;
 
     dists.reserve(graph.num_nodes);
+    frontier.reserve(graph.num_nodes);
     for (int i = 0; i < graph.num_nodes; ++i) {
         dists.push_back(-1); // Signifies a node hasn't been visited
+        frontier.push_back(false);
     }
 
     // TODO: load-balancing nodes based on number of outgoing edges
@@ -72,13 +74,13 @@ void initialize(const Graph &graph, int source, int rank, int num_procs) {
 
     // Create the first frontier
     if (start_row <= source && source < end_row) {
-        frontier.push_back(source);
+        frontier[source] = true;
         dists[source] = 0;
     }
 }
 
-// Finds the owner process of a node with binary search
 int get_owner(int node) {
+    // binary search over displacements
     int lo = 0, hi = displacements.size() - 1;
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
@@ -94,72 +96,74 @@ int get_owner(int node) {
     return -1;
 }
 
-/**
-* Each processor owns a partition of the nodes and is in charge of updating
-* the distances of those nodes from the source node, as well as updating its
-* frontier and reporting discovered neighbors to other processes (all-to-all).
-*/
 void parallel_bfs(const Graph &g, int rank, int num_procs) {
     if (rank >= g.num_nodes)
         return;
 
+    std::vector<int> frontier_nodes;
+
+    // initialize frontier_nodes from your boolean frontier
+    for (int i = start_row; i < end_row; ++i) {
+        if (frontier[i]) frontier_nodes.push_back(i);
+    }
+
     int distance = 1;
 
     while (true) {
-        // Collects the discovered nodes (outgoing edges from nodes in the frontier)
-        // to send to their owner processor
-        std::vector<std::vector<int>> discovered_nodes(num_procs);
+        // 1. Build send buffers (sparse)
+        std::vector<std::vector<int>> sendbuf(num_procs);
 
-        // (u, v): edges from node u to node v
-        for (int u : frontier) {
-            for (int edge = g.row_ptr[u]; edge < g.row_ptr[u + 1]; ++edge) {
-                int v = g.col_ind[edge];
+        for (int u : frontier_nodes) {
+            for (int e = g.row_ptr[u]; e < g.row_ptr[u + 1]; ++e) {
+                int v = g.col_ind[e];
                 int owner = get_owner(v);
-                discovered_nodes[owner].push_back(v);
+                sendbuf[owner].push_back(v);
             }
         }
 
-        std::vector<int> send_cts(num_procs), send_displacements(num_procs);
+        // 2. Build sendcounts + displs
+        std::vector<int> sendcounts(num_procs), sdispls(num_procs);
         int total_send = 0;
+
         for (int i = 0; i < num_procs; ++i) {
-            send_cts[i] = discovered_nodes[i].size();
-            send_displacements[i] = total_send;
-            total_send += send_cts[i];
+            sendcounts[i] = sendbuf[i].size();
+            sdispls[i] = total_send;
+            total_send += sendcounts[i];
         }
 
-        // Flatten discovered nodes into a 1D vector so it can be sent with MPI
-        std::vector<int> send_data(total_send);
+        // 3. Flatten send buffer
+        std::vector<int> senddata(total_send);
         for (int i = 0; i < num_procs; ++i) {
-            std::copy(discovered_nodes[i].begin(), discovered_nodes[i].end(),
-                send_data.begin() + send_displacements[i]);
+            std::copy(sendbuf[i].begin(), sendbuf[i].end(),
+                    senddata.begin() + sdispls[i]);
         }
 
-        // Exchange the expected counts to receive/send with all other ranks
-        std::vector<int> recv_cts(num_procs);
-        MPI_Alltoall(send_cts.data(), 1, MPI_INT, recv_cts.data(), 1,
-            MPI_INT, MPI_COMM_WORLD);
-
-        // Create receiving buffer and displacements (for how much data is expected from other ranks)
-        std::vector<int> recv_displacements(num_procs);
-        int total_recv = 0;
-        for (int i = 0; i < num_procs; ++i) {
-            recv_displacements[i] = total_recv;
-            total_recv += recv_cts[i];
-        }
-        std::vector<int> recv_data(total_recv);
-
-        // Exchange nodes in the new frontier to their respective owner processes
-        // Cost: (all neighbors of frontier nodes across ranks) x num_procs
-        MPI_Alltoallv(send_data.data(), send_cts.data(), send_displacements.data(), MPI_INT,
-                    recv_data.data(), recv_cts.data(), recv_displacements.data(), MPI_INT,
+        // 4. Exchange counts
+        std::vector<int> recvcounts(num_procs);
+        MPI_Alltoall(sendcounts.data(), 1, MPI_INT,
+                    recvcounts.data(), 1, MPI_INT,
                     MPI_COMM_WORLD);
 
-        // Each processor updates its partition of node distances & creates its new frontier
-        // Does an OR operation over the copies of frontiers from all processes 
+        // 5. Build recv displacements
+        std::vector<int> rdispls(num_procs);
+        int total_recv = 0;
+        for (int i = 0; i < num_procs; ++i) {
+            rdispls[i] = total_recv;
+            total_recv += recvcounts[i];
+        }
+
+        std::vector<int> recvdata(total_recv);
+
+        // 6. Exchange actual node IDs
+        MPI_Alltoallv(senddata.data(), sendcounts.data(), sdispls.data(), MPI_INT,
+                    recvdata.data(), recvcounts.data(), rdispls.data(), MPI_INT,
+                    MPI_COMM_WORLD);
+
+        // 7. Build next frontier (owner only!)
         std::vector<int> next_frontier;
         int has_frontier = 0;
 
-        for (int v : recv_data) {
+        for (int v : recvdata) {
             if (dists[v] == -1) {
                 dists[v] = distance;
                 next_frontier.push_back(v);
@@ -167,15 +171,14 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
             }
         }
 
-        // Check if any rank has a non-zero new frontier
-        int global_frontier;
-        MPI_Allreduce(&has_frontier, &global_frontier, 1, MPI_INT, MPI_SUM,
+        // 8. Global termination check
+        int global_active;
+        MPI_Allreduce(&has_frontier, &global_active, 1, MPI_INT, MPI_SUM,
                     MPI_COMM_WORLD);
 
-        // No new nodes to explore
-        if (global_frontier == 0) break;
+        if (global_active == 0) break;
 
-        frontier.swap(next_frontier);
+        frontier_nodes.swap(next_frontier);
         distance++;
     }
 }
