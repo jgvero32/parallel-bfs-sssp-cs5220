@@ -39,7 +39,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
         // cout << "processing bucket " << b << endl;
 
         // process
-        unordered_set<int> processed_nodes;
+        vector<int> processed_nodes;
         while (!buckets[b].empty())
         {
             // take snapshot the current bucket
@@ -51,7 +51,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta)
             for (int node : snapshot)
             {
 #pragma omp critical
-                processed_nodes.insert(node);
+                processed_nodes.push_back(node);
                 // cout << "node " << node << "'s neighbors -----------------\n";
 
                 // go through node's neighbors and relax edges
