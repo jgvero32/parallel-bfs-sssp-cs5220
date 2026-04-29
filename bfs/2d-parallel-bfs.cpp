@@ -10,8 +10,8 @@
     To run:
     cd bfs
     salloc -N 1 -C cpu -q interactive -t 01:00:00 -A m4341 -n 4
-    mpicxx -O2 -std=c++23 2d-parallel-bfs.cpp -o bfs_parallel
-    srun -n 4 ./bfs_parallel ../datasets/soc-LiveJournal1.txt 0
+    mpicxx -O2 -std=c++23 2d-parallel-bfs.cpp -o 2d-bfs_parallel
+    srun -n 4 ./2d-bfs_parallel ../datasets/soc-LiveJournal1.txt 0
 */
 
 // sets local_row_ptr and local_col_ind to contain a CSR version of the submatrix for the current processor

@@ -1,9 +1,9 @@
 /*
 Serial BFS for roadNet-CA
 How to run:
-   Compile: g++ -O2 -std=c++23 -o 2d_bfs_serial serial-bfs.cpp
-   Run:     ./2d_bfs_serial ../datasets/roadNet-CA.txt <source_node>
-       ex:  ./2d_bfs_serial ../datasets/roadNet-CA.txt 0
+   Compile: g++ -O2 -std=c++23 -o bfs_serial serial-bfs.cpp
+   Run:     ./bfs_serial ../datasets/roadNet-CA.txt <source_node>
+       ex:  ./bfs_serial ../datasets/roadNet-CA.txt 0
 */
 
 #include "graph_utils.h"
