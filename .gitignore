@@ -1,7 +1,5 @@
 bfs_serial
 bfs_parallel
-roadNet-CA.txt
-facebook_combined.txt
-twitter_combined.txt
+/datasets/*.txt
 build/
 .vscode/
