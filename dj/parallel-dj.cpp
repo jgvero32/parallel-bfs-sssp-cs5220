@@ -20,7 +20,7 @@ How to run:
 // Buckets: bucket[i] holds nodes with tentative distance in [i*delta, (i+1)*delta)
 // Light edges: weight <= delta (processed within a bucket)
 // Heavy edges: weight > delta  (processed after bucket is done)
-vector<double> parallel_dijktras_v6(const Graph &g, int src, int delta, int nthreads)
+vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthreads)
 {
     vector<double> distances(g.num_nodes, INF);
     vector<bool> in_frontier(g.num_nodes, false);
