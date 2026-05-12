@@ -40,6 +40,8 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
     vector<vector<int>> local_data(nthreads);
     vector<vector<long>> local_row_ptr(nthreads);
 
+    double t_csr_build = 0;
+    double _tcsr = omp_get_wtime();
 #pragma omp parallel num_threads(nthreads)
     {
         int tid = omp_get_thread_num();
@@ -54,6 +56,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
         }
         local_row_ptr[tid].push_back(local_col_ind[tid].size()); // sentinel
     }
+    t_csr_build = omp_get_wtime() - _tcsr;
 
     vector<vector<vector<pair<int, double>>>> outgoing(nthreads, vector<vector<pair<int, double>>>(nthreads));
     vector<vector<int>> snapshots(nthreads);
@@ -248,6 +251,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
         t_merge += omp_get_wtime() - tm0;
     }
 
+    cout << "  [timing] local CSR build     : " << t_csr_build << "s\n";
     cout << "  [timing] parallel relaxation : " << t_parallel << "s\n";
     cout << "  [timing] parallel merge      : " << t_merge << "s\n";
     cout << "  [timing] find min bucket     : " << t_find_b << "s\n";
