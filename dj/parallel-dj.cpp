@@ -1200,6 +1200,7 @@ int main(int argc, char *argv[])
 
     // memory accessed per edge: read col_ind (4B) + data (4B) + distances[neighbor] (8B)
     // + write distances (8B) + node_bucket (4B) = ~28 bytes per edge
+    long long edges = g.num_edges;
     double bytes_per_edge = 28.0;
     double gb_accessed = (edges * bytes_per_edge * 2.0) / 1e9; // 2x for re-relaxations
     double bandwidth_gbs = gb_accessed / elapsed;
@@ -1210,7 +1211,7 @@ int main(int argc, char *argv[])
     // effective GFLOPS — edges processed per second
     // delta-stepping re-relaxes, so multiply by average re-relaxation factor
     // conservative estimate: assume 2x re-relaxation on social networks
-    long long edges = g.num_edges;
+
     double flops_per_edge = 5.0; // add + compare + bucket index + array write + branch
     double gflops = (edges * flops_per_edge * 2.0) / (elapsed * 1e9);
     cout << "  Effective GFLOPS : " << gflops << "\n";
