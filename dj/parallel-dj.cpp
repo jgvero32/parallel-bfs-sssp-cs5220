@@ -25,17 +25,17 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
     vector<double> distances(g.num_nodes, INF);
 
     // each thread owns nodes where node % nthreads == tid
-    // tbuckets uses vector<int> instead of unordered_set — O(1) clear vs O(n)
-    vector<unordered_map<int, vector<int>>> tbuckets(nthreads);
+    // tbuckets uses unordered_set for O(1) erase in merge
+    vector<unordered_map<int, unordered_set<int>>> tbuckets(nthreads);
     vector<vector<vector<pair<int, double>>>> outgoing(nthreads, vector<vector<pair<int, double>>>(nthreads));
 
-    // pre-allocate snapshots and local_processed — reused across inner iterations
+    // snapshots as vector<int> — O(1) clear vs O(n) for unordered_set
     vector<vector<int>> snapshots(nthreads);
     vector<vector<int>> local_processed(nthreads);
 
     int src_owner = src % nthreads;
     distances[src] = 0.0;
-    tbuckets[src_owner][0].push_back(src); // bucket 0 = distance range [0, delta)
+    tbuckets[src_owner][0].insert(src); // bucket 0 = distance range [0, delta)
 
     double t_parallel = 0, t_merge = 0;
     double t_find_b = 0, t_work_avail = 0, t_snapshot = 0;
@@ -76,16 +76,18 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
         // process light edges until bucket b is stable ----------------------------
         while (work_available())
         {
-            // O(1) clear for vector vs O(n) for unordered_set — keeps capacity
+            // copy set into vector snapshot then clear set — keeps set capacity allocated
+            // vector clear is O(1), avoids realloc on next iteration
             double _ts = omp_get_wtime();
             for (int tid = 0; tid < nthreads; tid++)
             {
                 snapshots[tid].clear();
                 local_processed[tid].clear();
-                if (tbuckets[tid].count(b))
+                if (tbuckets[tid].count(b) && !tbuckets[tid][b].empty())
                 {
-                    snapshots[tid] = move(tbuckets[tid][b]); // O(1) move
-                    tbuckets[tid].erase(b);
+                    auto &s = tbuckets[tid][b];
+                    snapshots[tid].assign(s.begin(), s.end());
+                    s.clear(); // O(n) but keeps hash table allocated for future inserts
                 }
             }
             t_snapshot += omp_get_wtime() - _ts;
@@ -132,14 +134,10 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
                 for (auto &[neighbor, d_prime] : best_updates)
                     if (d_prime < distances[neighbor])
                     {
-                        // erase from old bucket — remove+erase pattern for vector
                         if (distances[neighbor] != INF)
-                        {
-                            auto &old_bucket = tbuckets[tid][(int)distances[neighbor] / delta];
-                            old_bucket.erase(remove(old_bucket.begin(), old_bucket.end(), neighbor), old_bucket.end());
-                        }
+                            tbuckets[tid][(int)distances[neighbor] / delta].erase(neighbor);
                         distances[neighbor] = d_prime;
-                        tbuckets[tid][(int)d_prime / delta].push_back(neighbor);
+                        tbuckets[tid][(int)d_prime / delta].insert(neighbor);
                     }
 
                 for (int node : snapshots[tid])
@@ -207,12 +205,9 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
                 if (d_prime < distances[neighbor])
                 {
                     if (distances[neighbor] != INF)
-                    {
-                        auto &old_bucket = tbuckets[tid][(int)distances[neighbor] / delta];
-                        old_bucket.erase(remove(old_bucket.begin(), old_bucket.end(), neighbor), old_bucket.end());
-                    }
+                        tbuckets[tid][(int)distances[neighbor] / delta].erase(neighbor);
                     distances[neighbor] = d_prime;
-                    tbuckets[tid][(int)d_prime / delta].push_back(neighbor);
+                    tbuckets[tid][(int)d_prime / delta].insert(neighbor);
                 }
         }
         t_merge += omp_get_wtime() - tm0;
