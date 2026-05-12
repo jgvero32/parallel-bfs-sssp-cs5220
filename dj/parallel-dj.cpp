@@ -14,6 +14,7 @@ How to run:
 #include <unordered_map>
 #include <omp.h>
 #include <random>
+#include <climits>
 
 // Delta-stepping SSSP
 // Buckets: bucket[i] holds nodes with tentative distance in [i*delta, (i+1)*delta)
@@ -70,6 +71,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
         {
             // each thread take snapshot of own bucket
             vector<unordered_set<int>> snapshots(nthreads);
+            vector<vector<int>> local_processed(nthreads);
 
             for (int tid = 0; tid < nthreads; tid++)
             {
@@ -80,8 +82,8 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
                 }
             }
 
-            // outgoing[tid] = updates that belong to thread tid
-            vector<vector<pair<int, double>>> outgoing(nthreads);
+            // outgoing[src_tid][dest_tid] = updates that belong to thread tid
+            vector<vector<vector<pair<int, double>>>> outgoing(nthreads, vector<vector<pair<int, double>>>(nthreads));
 
             double tp0 = omp_get_wtime();
 #pragma omp parallel num_threads(nthreads)
@@ -97,7 +99,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
                             continue;
                         double d_prime = distances[node] + weight;
                         if (d_prime < distances[neighbor])
-                            outgoing[neighbor % nthreads].push_back({neighbor, d_prime});
+                            outgoing[tid][neighbor % nthreads].push_back({neighbor, d_prime});
                     }
                 }
             }
@@ -108,29 +110,35 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
 #pragma omp parallel num_threads(nthreads)
             {
                 int tid = omp_get_thread_num();
-                for (auto &[neighbor, d_prime] : outgoing[tid])
+                for (int src = 0; src < nthreads; src++)
                 {
-                    if (d_prime < distances[neighbor])
+                    for (auto &[neighbor, d_prime] : outgoing[src][tid])
                     {
-                        if (distances[neighbor] != INF)
-                            tbuckets[tid][(int)distances[neighbor] / delta].erase(neighbor);
+                        if (d_prime < distances[neighbor])
+                        {
+                            if (distances[neighbor] != INF)
+                                tbuckets[tid][(int)distances[neighbor] / delta].erase(neighbor);
 
-                        distances[neighbor] = d_prime;
-                        tbuckets[tid][(int)d_prime / delta].insert(neighbor);
+                            distances[neighbor] = d_prime;
+                            tbuckets[tid][(int)d_prime / delta].insert(neighbor);
+                        }
                     }
                 }
 
                 for (int node : snapshots[tid])
-#pragma omp critical
-                    processed_nodes.push_back(node); // TODO: add critical?
+                    local_processed[tid].push_back(node);
             }
             t_merge += omp_get_wtime() - tm0;
+
+            for (int tid = 0; tid < nthreads; tid++)
+                for (int node : local_processed[tid])
+                    processed_nodes.push_back(node);
         } // light edges processed (end)
 
         // process heavy edges ------------------------------------------------------
 
-        // outgoing[tid] = updates that belong to thread tid
-        vector<vector<pair<int, double>>> outgoing(nthreads);
+        // outgoing[src_tid][dest_tid] = updates that belong to thread tid
+        vector<vector<vector<pair<int, double>>>> outgoing(nthreads, vector<vector<pair<int, double>>>(nthreads));
 
         double tp0 = omp_get_wtime();
 #pragma omp parallel num_threads(nthreads)
@@ -150,7 +158,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
                         continue;
                     double d_prime = distances[node] + weight;
                     if (d_prime < distances[neighbor])
-                        outgoing[neighbor % nthreads].push_back({neighbor, d_prime});
+                        outgoing[tid][neighbor % nthreads].push_back({neighbor, d_prime});
                 }
             }
         }
@@ -160,15 +168,18 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
 #pragma omp parallel num_threads(nthreads)
         {
             int tid = omp_get_thread_num();
-            for (auto &[neighbor, d_prime] : outgoing[tid])
+            for (int src = 0; src < nthreads; src++)
             {
-                if (d_prime < distances[neighbor])
+                for (auto &[neighbor, d_prime] : outgoing[src][tid])
                 {
-                    if (distances[neighbor] != INF)
-                        tbuckets[tid][(int)distances[neighbor] / delta].erase(neighbor);
+                    if (d_prime < distances[neighbor])
+                    {
+                        if (distances[neighbor] != INF)
+                            tbuckets[tid][(int)distances[neighbor] / delta].erase(neighbor);
 
-                    distances[neighbor] = d_prime;
-                    tbuckets[tid][(int)d_prime / delta].insert(neighbor);
+                        distances[neighbor] = d_prime;
+                        tbuckets[tid][(int)d_prime / delta].insert(neighbor);
+                    }
                 }
             }
         }
