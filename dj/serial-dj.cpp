@@ -68,6 +68,10 @@ int main(int argc, char *argv[])
     try
     {
         g = load_graph(dataset_file_name);
+        mt19937 rng(42);
+        uniform_int_distribution<int> weight_dist(1, 100);
+        for (int &w : g.data)
+            w = weight_dist(rng);
     }
     catch (const exception &e)
     {
