@@ -23,132 +23,164 @@ How to run:
 vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthreads)
 {
     vector<double> distances(g.num_nodes, INF);
-    vector<bool> in_frontier(g.num_nodes, false);
 
-    // sparse frontier — explicit list of active nodes
-    vector<int> frontier;
-
-    distances[src] = 0.0;
-    in_frontier[src] = true;
-    frontier.push_back(src);
-
-    // sparse/dense threshold — switch to full scan when frontier > n / log2(n)
-    int dense_threshold = g.num_nodes / max(1.0, log2((double)g.num_nodes));
-
-    double t_parallel = 0, t_merge = 0, t_extract = 0, t_flatten = 0;
-
-    // outgoing[src_tid][dest_tid] — pre-allocated, reused each iteration
+    // each thread owns nodes where node % nthreads == tid
+    // unordered_set for O(1) erase in merge
+    vector<unordered_map<int, unordered_set<int>>> tbuckets(nthreads);
     vector<vector<vector<pair<int, double>>>> outgoing(nthreads, vector<vector<pair<int, double>>>(nthreads));
-    vector<vector<int>> local_next(nthreads);
 
-    while (!frontier.empty())
+    // snapshots as vector<int> — O(1) clear, parallelized across threads
+    vector<vector<int>> snapshots(nthreads);
+    vector<vector<int>> local_processed(nthreads);
+
+    int src_owner = src % nthreads;
+    distances[src] = 0.0;
+    tbuckets[src_owner][0].insert(src); // bucket 0 = distance range [0, delta)
+
+    double t_parallel = 0, t_merge = 0;
+    double t_find_b = 0, t_work_avail = 0, t_snapshot = 0;
+    double t_outgoing_clear = 0, t_flatten = 0, t_bucket_erase = 0;
+
+    while (true)
     {
-        // find min distance in frontier — parallel reduce
-        double min_dist = INF;
-#pragma omp parallel for num_threads(nthreads) reduction(min : min_dist)
-        for (int i = 0; i < (int)frontier.size(); i++)
-            min_dist = min(min_dist, distances[frontier[i]]);
+        // find global min non-empty bucket across all threads — parallel reduce
+        double _t0 = omp_get_wtime();
+        int b = INT_MAX;
+#pragma omp parallel for num_threads(nthreads) reduction(min : b)
+        for (int tid = 0; tid < nthreads; tid++)
+            for (auto &[bucket, nodes] : tbuckets[tid])
+                if (!nodes.empty() && bucket < b)
+                    b = bucket;
+        t_find_b += omp_get_wtime() - _t0;
 
-        double threshold = min_dist + delta;
+        // no more buckets to process
+        if (b == INT_MAX)
+            break;
 
-        // extract batch — sparse or dense depending on frontier size
+        vector<int> processed_nodes;
+
+        // check if any thread has work remaining in bucket b
+        auto work_available = [&]()
+        {
+            double _t = omp_get_wtime();
+            for (int tid = 0; tid < nthreads; tid++)
+                if (tbuckets[tid].count(b) && !tbuckets[tid][b].empty())
+                {
+                    t_work_avail += omp_get_wtime() - _t;
+                    return true;
+                }
+            t_work_avail += omp_get_wtime() - _t;
+            return false;
+        };
+
+        // process light edges until bucket b is stable ----------------------------
+        while (work_available())
+        {
+            // parallel snapshot — each thread copies its own bucket slice
+            // vector clear is O(1), assign from set is parallelized across threads
+            double _ts = omp_get_wtime();
+#pragma omp parallel for num_threads(nthreads)
+            for (int tid = 0; tid < nthreads; tid++)
+            {
+                snapshots[tid].clear();
+                local_processed[tid].clear();
+                if (tbuckets[tid].count(b) && !tbuckets[tid][b].empty())
+                {
+                    auto &s = tbuckets[tid][b];
+                    snapshots[tid].assign(s.begin(), s.end());
+                    s.clear(); // keeps hash table allocated for future inserts
+                }
+            }
+            t_snapshot += omp_get_wtime() - _ts;
+
+            // outgoing[src_tid][dest_tid] — thread tid writes only to outgoing[tid]
+            double _tc = omp_get_wtime();
+            for (auto &v : outgoing)
+                for (auto &vv : v)
+                    vv.clear();
+            t_outgoing_clear += omp_get_wtime() - _tc;
+
+            double tp0 = omp_get_wtime();
+#pragma omp parallel num_threads(nthreads)
+            {
+                int tid = omp_get_thread_num();
+                for (int node : snapshots[tid])
+                    for (long idx = g.row_ptr[node]; idx < g.row_ptr[node + 1]; idx++)
+                    {
+                        int neighbor = g.col_ind[idx];
+                        int weight = g.data[idx];
+                        if (weight > delta)
+                            continue;
+                        double d_prime = distances[node] + weight;
+                        if (d_prime < distances[neighbor])
+                            outgoing[tid][neighbor % nthreads].push_back({neighbor, d_prime});
+                    }
+            }
+            t_parallel += omp_get_wtime() - tp0;
+
+            // each thread merges only its own incoming updates — no conflicts
+            double tm0 = omp_get_wtime();
+#pragma omp parallel num_threads(nthreads)
+            {
+                int tid = omp_get_thread_num();
+
+                // collect best update per neighbor across all src threads
+                unordered_map<int, double> best_updates;
+                for (int src_tid = 0; src_tid < nthreads; src_tid++)
+                    for (auto &[neighbor, d_prime] : outgoing[src_tid][tid])
+                        if (!best_updates.count(neighbor) || d_prime < best_updates[neighbor])
+                            best_updates[neighbor] = d_prime;
+
+                // apply best updates — thread tid owns these neighbors exclusively
+                for (auto &[neighbor, d_prime] : best_updates)
+                    if (d_prime < distances[neighbor])
+                    {
+                        if (distances[neighbor] != INF)
+                            tbuckets[tid][(int)distances[neighbor] / delta].erase(neighbor);
+                        distances[neighbor] = d_prime;
+                        tbuckets[tid][(int)d_prime / delta].insert(neighbor);
+                    }
+
+                for (int node : snapshots[tid])
+                    local_processed[tid].push_back(node);
+            }
+            t_merge += omp_get_wtime() - tm0;
+
+            double _tf = omp_get_wtime();
+            for (int tid = 0; tid < nthreads; tid++)
+                processed_nodes.insert(processed_nodes.end(), local_processed[tid].begin(), local_processed[tid].end());
+            t_flatten += omp_get_wtime() - _tf;
+        }
+
+        // bucket b is now stable — clear it from all threads
         double _te = omp_get_wtime();
-        vector<int> batch;
-        vector<int> next_frontier;
+        for (int tid = 0; tid < nthreads; tid++)
+            tbuckets[tid].erase(b);
+        t_bucket_erase += omp_get_wtime() - _te;
 
-        if ((int)frontier.size() < dense_threshold)
-        {
-            // sparse mode — filter explicit frontier list in parallel
-            vector<vector<int>> local_batch(nthreads), local_next_frontier(nthreads);
-
-#pragma omp parallel num_threads(nthreads)
-            {
-                int tid = omp_get_thread_num();
-                for (int i = tid; i < (int)frontier.size(); i += nthreads)
-                {
-                    int node = frontier[i];
-                    if (distances[node] <= threshold)
-                        local_batch[tid].push_back(node);
-                    else
-                        local_next_frontier[tid].push_back(node);
-                }
-            }
-
-            // prefix sum scatter into batch and next_frontier
-            vector<int> batch_offsets(nthreads + 1, 0), nf_offsets(nthreads + 1, 0);
-            for (int tid = 0; tid < nthreads; tid++)
-            {
-                batch_offsets[tid + 1] = batch_offsets[tid] + local_batch[tid].size();
-                nf_offsets[tid + 1] = nf_offsets[tid] + local_next_frontier[tid].size();
-            }
-            batch.resize(batch_offsets[nthreads]);
-            next_frontier.resize(nf_offsets[nthreads]);
-
-#pragma omp parallel num_threads(nthreads)
-            {
-                int tid = omp_get_thread_num();
-                copy(local_batch[tid].begin(), local_batch[tid].end(),
-                     batch.begin() + batch_offsets[tid]);
-                copy(local_next_frontier[tid].begin(), local_next_frontier[tid].end(),
-                     next_frontier.begin() + nf_offsets[tid]);
-            }
-        }
-        else
-        {
-            // dense mode — scan full distance array in parallel
-            vector<vector<int>> local_batch(nthreads), local_next_frontier(nthreads);
-
-#pragma omp parallel num_threads(nthreads)
-            {
-                int tid = omp_get_thread_num();
-                for (int i = tid; i < g.num_nodes; i += nthreads)
-                {
-                    if (distances[i] == INF)
-                        continue;
-                    if (distances[i] <= threshold)
-                        local_batch[tid].push_back(i);
-                    else if (in_frontier[i])
-                        local_next_frontier[tid].push_back(i);
-                }
-            }
-
-            // prefix sum scatter
-            vector<int> batch_offsets(nthreads + 1, 0), nf_offsets(nthreads + 1, 0);
-            for (int tid = 0; tid < nthreads; tid++)
-            {
-                batch_offsets[tid + 1] = batch_offsets[tid] + local_batch[tid].size();
-                nf_offsets[tid + 1] = nf_offsets[tid] + local_next_frontier[tid].size();
-            }
-            batch.resize(batch_offsets[nthreads]);
-            next_frontier.resize(nf_offsets[nthreads]);
-
-#pragma omp parallel num_threads(nthreads)
-            {
-                int tid = omp_get_thread_num();
-                copy(local_batch[tid].begin(), local_batch[tid].end(),
-                     batch.begin() + batch_offsets[tid]);
-                copy(local_next_frontier[tid].begin(), local_next_frontier[tid].end(),
-                     next_frontier.begin() + nf_offsets[tid]);
-            }
-        }
-        t_extract += omp_get_wtime() - _te;
-
-        // parallel relaxation — no light/heavy split, Δ*-stepping processes all edges
+        // relax heavy edges from processed nodes (weight > delta) -----------------
+        double _tc = omp_get_wtime();
         for (auto &v : outgoing)
             for (auto &vv : v)
                 vv.clear();
+        t_outgoing_clear += omp_get_wtime() - _tc;
 
         double tp0 = omp_get_wtime();
 #pragma omp parallel num_threads(nthreads)
         {
             int tid = omp_get_thread_num();
-            for (int i = tid; i < (int)batch.size(); i += nthreads)
+            for (int node : processed_nodes)
             {
-                int node = batch[i];
+                if (node % nthreads != tid)
+                    continue;
+                if (distances[node] == INF || ((int)distances[node] / delta) != b)
+                    continue;
                 for (long idx = g.row_ptr[node]; idx < g.row_ptr[node + 1]; idx++)
                 {
                     int neighbor = g.col_ind[idx];
                     int weight = g.data[idx];
+                    if (weight <= delta)
+                        continue;
                     double d_prime = distances[node] + weight;
                     if (d_prime < distances[neighbor])
                         outgoing[tid][neighbor % nthreads].push_back({neighbor, d_prime});
@@ -156,10 +188,6 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
             }
         }
         t_parallel += omp_get_wtime() - tp0;
-
-        // parallel merge — each thread owns its neighbors exclusively
-        for (auto &v : local_next)
-            v.clear();
 
         double tm0 = omp_get_wtime();
 #pragma omp parallel num_threads(nthreads)
@@ -173,49 +201,29 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
                     if (!best_updates.count(neighbor) || d_prime < best_updates[neighbor])
                         best_updates[neighbor] = d_prime;
 
-            // apply and add newly discovered nodes to next frontier
+            // apply best updates — thread tid owns these neighbors exclusively
             for (auto &[neighbor, d_prime] : best_updates)
                 if (d_prime < distances[neighbor])
                 {
+                    if (distances[neighbor] != INF)
+                        tbuckets[tid][(int)distances[neighbor] / delta].erase(neighbor);
                     distances[neighbor] = d_prime;
-                    if (!in_frontier[neighbor])
-                    {
-                        in_frontier[neighbor] = true;
-                        local_next[tid].push_back(neighbor);
-                    }
+                    tbuckets[tid][(int)d_prime / delta].insert(neighbor);
                 }
         }
         t_merge += omp_get_wtime() - tm0;
-
-        // flatten local_next into next_frontier via prefix sum scatter
-        double _tf = omp_get_wtime();
-        vector<int> next_offsets(nthreads + 1, 0);
-        for (int tid = 0; tid < nthreads; tid++)
-            next_offsets[tid + 1] = next_offsets[tid] + local_next[tid].size();
-
-        int old_size = next_frontier.size();
-        next_frontier.resize(old_size + next_offsets[nthreads]);
-
-#pragma omp parallel num_threads(nthreads)
-        {
-            int tid = omp_get_thread_num();
-            copy(local_next[tid].begin(), local_next[tid].end(),
-                 next_frontier.begin() + old_size + next_offsets[tid]);
-        }
-        t_flatten += omp_get_wtime() - _tf;
-
-// clear in_frontier for processed batch nodes — Δ* accepts re-processing
-#pragma omp parallel for num_threads(nthreads)
-        for (int i = 0; i < (int)batch.size(); i++)
-            in_frontier[batch[i]] = false;
-
-        frontier = move(next_frontier);
     }
 
     cout << "  [timing] parallel relaxation : " << t_parallel << "s\n";
     cout << "  [timing] parallel merge      : " << t_merge << "s\n";
-    cout << "  [timing] extract (sparse/dense): " << t_extract << "s\n";
-    cout << "  [timing] flatten             : " << t_flatten << "s\n";
+    cout << "  [timing] find min bucket     : " << t_find_b << "s\n";
+    cout << "  [timing] work_available      : " << t_work_avail << "s\n";
+    cout << "  [timing] snapshot            : " << t_snapshot << "s\n";
+    cout << "  [timing] outgoing clear      : " << t_outgoing_clear << "s\n";
+    cout << "  [timing] flatten processed   : " << t_flatten << "s\n";
+    cout << "  [timing] bucket erase        : " << t_bucket_erase << "s\n";
+    cout << "  [timing] parallel fraction   : "
+         << (t_parallel / (t_parallel + t_merge)) * 100 << "%\n";
 
     return distances;
 }
