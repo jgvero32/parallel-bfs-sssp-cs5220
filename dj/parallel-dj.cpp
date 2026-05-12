@@ -1204,6 +1204,8 @@ int main(int argc, char *argv[])
     double gb_accessed = (edges * bytes_per_edge * 2.0) / 1e9; // 2x for re-relaxations
     double bandwidth_gbs = gb_accessed / elapsed;
     cout << "  Effective bandwidth : " << bandwidth_gbs << " GB/s\n";
+    cout << "  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)\n";
+    cout << "  Bandwidth utilization: " << (bandwidth_gbs / 400.0) * 100 << "%\n";
 
     // effective GFLOPS — edges processed per second
     // delta-stepping re-relaxes, so multiply by average re-relaxation factor
