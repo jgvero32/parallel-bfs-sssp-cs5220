@@ -15,6 +15,7 @@ How to run:
 #include <omp.h>
 #include <random>
 #include <climits>
+#include <set>
 
 // Delta-stepping SSSP
 // Buckets: bucket[i] holds nodes with tentative distance in [i*delta, (i+1)*delta)
@@ -430,7 +431,6 @@ vector<double> parallel_dijktras_bestusinghashmaps(const Graph &g, int src, int 
                 }
         }
         t_merge += omp_get_wtime() - tm0;
-        numactl-- interleave = all./ dj_parallel./ datasets / soc - LiveJournal1 - weighted.txt 0 50 64
     }
 
     cout << "  [timing] parallel relaxation : " << t_parallel << "s\n";
