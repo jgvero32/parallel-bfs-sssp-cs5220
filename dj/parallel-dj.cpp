@@ -91,20 +91,24 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
 #pragma omp parallel num_threads(nthreads)
         {
             int tid = omp_get_thread_num();
-            for (int src_tid = 0; src_tid < nthreads; src_tid++)
-            {
-                for (auto &[neighbor, d_prime] : outgoing[src_tid][tid])
-                {
-                    // if better path found, add neighbor to next frontier
-                    if (d_prime < distances[neighbor])
-                    {
-                        distances[neighbor] = d_prime;
 
-                        if (!in_frontier[neighbor])
-                        {
-                            in_frontier[neighbor] = true;
-                            local_next[tid].push_back(neighbor);
-                        }
+            // instead of writing immediately, collect all updates per neighbor
+            // then for each neighbor owned by this tid, take min across all src_tid updates
+            unordered_map<int, double> best_updates;
+            for (int src_tid = 0; src_tid < nthreads; src_tid++)
+                for (auto &[neighbor, d_prime] : outgoing[src_tid][tid])
+                    if (!best_updates.count(neighbor) || d_prime < best_updates[neighbor])
+                        best_updates[neighbor] = d_prime;
+
+            for (auto &[neighbor, d_prime] : best_updates)
+            {
+                if (d_prime < distances[neighbor])
+                {
+                    distances[neighbor] = d_prime;
+                    if (!in_frontier[neighbor])
+                    {
+                        in_frontier[neighbor] = true;
+                        local_next[tid].push_back(neighbor);
                     }
                 }
             }
@@ -151,10 +155,6 @@ int main(int argc, char *argv[])
     try
     {
         g = load_graph(dataset_file_name);
-        mt19937 rng(42);
-        uniform_int_distribution<int> weight_dist(1, 100);
-        for (int &w : g.data)
-            w = weight_dist(rng);
     }
     catch (const exception &e)
     {
