@@ -35,8 +35,9 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
 
     while (true)
     {
-        // find global min non-empty bucket across all threads
+        // find global min non-empty bucket across all threads — parallel reduce
         int b = INT_MAX;
+#pragma omp parallel for num_threads(nthreads) reduction(min : b)
         for (int tid = 0; tid < nthreads; tid++)
             for (auto &[bucket, nodes] : tbuckets[tid])
                 if (!nodes.empty() && bucket < b)
@@ -48,13 +49,15 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
 
         vector<int> processed_nodes;
 
-        // check if any thread has work remaining in bucket b
+        // check if any thread has work remaining in bucket b — parallel reduce
         auto work_available = [&]()
         {
+            int has_work = 0;
+#pragma omp parallel for num_threads(nthreads) reduction(+ : has_work)
             for (int tid = 0; tid < nthreads; tid++)
                 if (tbuckets[tid].count(b) && !tbuckets[tid][b].empty())
-                    return true;
-            return false;
+                    has_work++;
+            return has_work > 0;
         };
 
         // process light edges until bucket b is stable ----------------------------
