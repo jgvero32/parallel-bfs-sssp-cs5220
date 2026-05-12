@@ -25,6 +25,250 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
 {
     vector<double> distances(g.num_nodes, INF);
 
+    // flat array tracking each node's current bucket — O(1) stale check
+    vector<int> node_bucket(g.num_nodes, -1);
+
+    int max_bucket = 200000 / delta + 2;
+
+    // per-thread flat bucket lists — direct index by bucket id, no hash map
+    vector<vector<vector<int>>> bucket_lists(nthreads, vector<vector<int>>(max_bucket));
+
+    // build thread-local CSR — each thread owns nodes where node % nthreads == tid
+    // allocated in parallel so memory lands on each thread's local NUMA node
+    vector<vector<int>> local_col_ind(nthreads);
+    vector<vector<int>> local_data(nthreads);
+    vector<vector<long>> local_row_ptr(nthreads); // offset into local_col_ind per owned node
+
+#pragma omp parallel num_threads(nthreads)
+    {
+        int tid = omp_get_thread_num();
+        for (int node = tid; node < g.num_nodes; node += nthreads)
+        {
+            local_row_ptr[tid].push_back(local_col_ind[tid].size());
+            for (long idx = g.row_ptr[node]; idx < g.row_ptr[node + 1]; idx++)
+            {
+                local_col_ind[tid].push_back(g.col_ind[idx]);
+                local_data[tid].push_back(g.data[idx]);
+            }
+        }
+        local_row_ptr[tid].push_back(local_col_ind[tid].size()); // sentinel
+    }
+
+    vector<vector<vector<pair<int, double>>>> outgoing(nthreads, vector<vector<pair<int, double>>>(nthreads));
+    vector<vector<int>> snapshots(nthreads);
+    vector<vector<int>> local_processed(nthreads);
+
+    // track min active bucket per thread — O(1) update instead of set insert
+    vector<int> thread_min_bucket(nthreads, INT_MAX);
+
+    int src_owner = src % nthreads;
+    distances[src] = 0.0;
+    node_bucket[src] = 0;
+    bucket_lists[src_owner][0].push_back(src);
+    thread_min_bucket[src_owner] = 0;
+
+    double t_parallel = 0, t_merge = 0;
+    double t_find_b = 0, t_work_avail = 0, t_snapshot = 0;
+    double t_outgoing_clear = 0, t_flatten = 0, t_bucket_erase = 0;
+
+    while (true)
+    {
+        // find global min non-empty bucket — O(nthreads) scan of min tracker
+        double _t0 = omp_get_wtime();
+        int b = INT_MAX;
+#pragma omp parallel for num_threads(nthreads) reduction(min : b)
+        for (int tid = 0; tid < nthreads; tid++)
+            b = min(b, thread_min_bucket[tid]);
+        t_find_b += omp_get_wtime() - _t0;
+
+        if (b == INT_MAX)
+            break;
+
+        vector<int> processed_nodes;
+
+        // check if any thread has non-stale work in bucket b
+        auto work_available = [&]()
+        {
+            double _t = omp_get_wtime();
+            for (int tid = 0; tid < nthreads; tid++)
+                for (int node : bucket_lists[tid][b])
+                    if (node_bucket[node] == b)
+                    {
+                        t_work_avail += omp_get_wtime() - _t;
+                        return true;
+                    }
+            t_work_avail += omp_get_wtime() - _t;
+            return false;
+        };
+
+        // process light edges until bucket b is stable ----------------------------
+        while (work_available())
+        {
+            // parallel snapshot — O(1) node_bucket check per node
+            double _ts = omp_get_wtime();
+#pragma omp parallel for num_threads(nthreads)
+            for (int tid = 0; tid < nthreads; tid++)
+            {
+                snapshots[tid].clear();
+                local_processed[tid].clear();
+                for (int node : bucket_lists[tid][b])
+                    if (node_bucket[node] == b)
+                        snapshots[tid].push_back(node);
+                bucket_lists[tid][b].clear();
+                // recompute thread min bucket after clearing b
+                if (thread_min_bucket[tid] == b)
+                {
+                    thread_min_bucket[tid] = INT_MAX;
+                    for (int bk = b + 1; bk < max_bucket; bk++)
+                        if (!bucket_lists[tid][bk].empty())
+                        {
+                            thread_min_bucket[tid] = bk;
+                            break;
+                        }
+                }
+            }
+            t_snapshot += omp_get_wtime() - _ts;
+
+            double _tc = omp_get_wtime();
+            for (auto &v : outgoing)
+                for (auto &vv : v)
+                    vv.clear();
+            t_outgoing_clear += omp_get_wtime() - _tc;
+
+            // parallel relaxation using thread-local CSR — NUMA-friendly reads
+            double tp0 = omp_get_wtime();
+#pragma omp parallel num_threads(nthreads)
+            {
+                int tid = omp_get_thread_num();
+                int owned_idx = 0; // index into local_row_ptr[tid]
+                for (int node : snapshots[tid])
+                {
+                    // node is owned by tid, so owned_idx = node / nthreads
+                    int local_node = node / nthreads;
+                    long start = local_row_ptr[tid][local_node];
+                    long end = local_row_ptr[tid][local_node + 1];
+                    for (long idx = start; idx < end; idx++)
+                    {
+                        int neighbor = local_col_ind[tid][idx];
+                        int weight = local_data[tid][idx];
+                        if (weight > delta)
+                            continue;
+                        double d_prime = distances[node] + weight;
+                        if (d_prime < distances[neighbor])
+                            outgoing[tid][neighbor % nthreads].push_back({neighbor, d_prime});
+                    }
+                }
+            }
+            t_parallel += omp_get_wtime() - tp0;
+
+            // parallel merge — no unordered_map, direct apply with distance check
+            double tm0 = omp_get_wtime();
+#pragma omp parallel num_threads(nthreads)
+            {
+                int tid = omp_get_thread_num();
+
+                // apply updates directly — tid owns all neighbors in outgoing[*][tid]
+                // no race possible since neighbor % nthreads == tid exclusively
+                for (int src_tid = 0; src_tid < nthreads; src_tid++)
+                    for (auto &[neighbor, d_prime] : outgoing[src_tid][tid])
+                        if (d_prime < distances[neighbor])
+                        {
+                            distances[neighbor] = d_prime;
+                            int new_b = (int)d_prime / delta;
+                            node_bucket[neighbor] = new_b;
+                            bucket_lists[tid][new_b].push_back(neighbor);
+                            if (new_b < thread_min_bucket[tid])
+                                thread_min_bucket[tid] = new_b;
+                        }
+
+                for (int node : snapshots[tid])
+                    local_processed[tid].push_back(node);
+            }
+            t_merge += omp_get_wtime() - tm0;
+
+            double _tf = omp_get_wtime();
+            for (int tid = 0; tid < nthreads; tid++)
+                processed_nodes.insert(processed_nodes.end(), local_processed[tid].begin(), local_processed[tid].end());
+            t_flatten += omp_get_wtime() - _tf;
+        }
+
+        // bucket b fully processed
+        double _te = omp_get_wtime();
+        for (int tid = 0; tid < nthreads; tid++)
+            bucket_lists[tid][b].clear();
+        t_bucket_erase += omp_get_wtime() - _te;
+
+        // relax heavy edges from processed nodes (weight > delta) -----------------
+        double _tc = omp_get_wtime();
+        for (auto &v : outgoing)
+            for (auto &vv : v)
+                vv.clear();
+        t_outgoing_clear += omp_get_wtime() - _tc;
+
+        double tp0 = omp_get_wtime();
+#pragma omp parallel num_threads(nthreads)
+        {
+            int tid = omp_get_thread_num();
+            for (int node : processed_nodes)
+            {
+                if (node % nthreads != tid)
+                    continue;
+                if (distances[node] == INF || node_bucket[node] != b)
+                    continue;
+                int local_node = node / nthreads;
+                long start = local_row_ptr[tid][local_node];
+                long end = local_row_ptr[tid][local_node + 1];
+                for (long idx = start; idx < end; idx++)
+                {
+                    int neighbor = local_col_ind[tid][idx];
+                    int weight = local_data[tid][idx];
+                    if (weight <= delta)
+                        continue;
+                    double d_prime = distances[node] + weight;
+                    if (d_prime < distances[neighbor])
+                        outgoing[tid][neighbor % nthreads].push_back({neighbor, d_prime});
+                }
+            }
+        }
+        t_parallel += omp_get_wtime() - tp0;
+
+        double tm0 = omp_get_wtime();
+#pragma omp parallel num_threads(nthreads)
+        {
+            int tid = omp_get_thread_num();
+            for (int src_tid = 0; src_tid < nthreads; src_tid++)
+                for (auto &[neighbor, d_prime] : outgoing[src_tid][tid])
+                    if (d_prime < distances[neighbor])
+                    {
+                        distances[neighbor] = d_prime;
+                        int new_b = (int)d_prime / delta;
+                        node_bucket[neighbor] = new_b;
+                        bucket_lists[tid][new_b].push_back(neighbor);
+                        if (new_b < thread_min_bucket[tid])
+                            thread_min_bucket[tid] = new_b;
+                    }
+        }
+        t_merge += omp_get_wtime() - tm0;
+    }
+
+    cout << "  [timing] parallel relaxation : " << t_parallel << "s\n";
+    cout << "  [timing] parallel merge      : " << t_merge << "s\n";
+    cout << "  [timing] find min bucket     : " << t_find_b << "s\n";
+    cout << "  [timing] work_available      : " << t_work_avail << "s\n";
+    cout << "  [timing] snapshot            : " << t_snapshot << "s\n";
+    cout << "  [timing] outgoing clear      : " << t_outgoing_clear << "s\n";
+    cout << "  [timing] flatten processed   : " << t_flatten << "s\n";
+    cout << "  [timing] bucket erase        : " << t_bucket_erase << "s\n";
+    cout << "  [timing] parallel fraction   : "
+         << (t_parallel / (t_parallel + t_merge)) * 100 << "%\n";
+
+    return distances;
+}
+
+vector<double> parallel_dijktras_vector(const Graph &g, int src, int delta, int nthreads)
+{
+    vector<double> distances(g.num_nodes, INF);
+
     // flat array tracking each node's current bucket — O(1) stale check, no hash lookup
     vector<int> node_bucket(g.num_nodes, -1);
 
