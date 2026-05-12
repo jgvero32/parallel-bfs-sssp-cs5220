@@ -21,7 +21,10 @@ How to run:
 // Buckets: bucket[i] holds nodes with tentative distance in [i*delta, (i+1)*delta)
 // Light edges: weight <= delta (processed within a bucket)
 // Heavy edges: weight > delta  (processed after bucket is done)
-vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthreads)
+vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthreads,
+                                 const vector<vector<int>> &local_col_ind,
+                                 const vector<vector<int>> &local_data,
+                                 const vector<vector<long>> &local_row_ptr)
 {
     vector<double> distances(g.num_nodes, INF);
 
@@ -33,30 +36,6 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
 
     // per-thread flat bucket lists — direct index by bucket id, no hash map
     vector<vector<vector<int>>> bucket_lists(nthreads, vector<vector<int>>(max_bucket));
-
-    // build thread-local CSR — each thread owns nodes where node % nthreads == tid
-    // allocated in parallel so memory lands on each thread's local NUMA node
-    vector<vector<int>> local_col_ind(nthreads);
-    vector<vector<int>> local_data(nthreads);
-    vector<vector<long>> local_row_ptr(nthreads);
-
-    double t_csr_build = 0;
-    double _tcsr = omp_get_wtime();
-#pragma omp parallel num_threads(nthreads)
-    {
-        int tid = omp_get_thread_num();
-        for (int node = tid; node < g.num_nodes; node += nthreads)
-        {
-            local_row_ptr[tid].push_back(local_col_ind[tid].size());
-            for (long idx = g.row_ptr[node]; idx < g.row_ptr[node + 1]; idx++)
-            {
-                local_col_ind[tid].push_back(g.col_ind[idx]);
-                local_data[tid].push_back(g.data[idx]);
-            }
-        }
-        local_row_ptr[tid].push_back(local_col_ind[tid].size()); // sentinel
-    }
-    t_csr_build = omp_get_wtime() - _tcsr;
 
     vector<vector<vector<pair<int, double>>>> outgoing(nthreads, vector<vector<pair<int, double>>>(nthreads));
     vector<vector<int>> snapshots(nthreads);
@@ -251,7 +230,6 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
         t_merge += omp_get_wtime() - tm0;
     }
 
-    cout << "  [timing] local CSR build     : " << t_csr_build << "s\n";
     cout << "  [timing] parallel relaxation : " << t_parallel << "s\n";
     cout << "  [timing] parallel merge      : " << t_merge << "s\n";
     cout << "  [timing] find min bucket     : " << t_find_b << "s\n";
@@ -1154,11 +1132,10 @@ int main(int argc, char *argv[])
 
     const string dataset_file_name = argv[1];
     int source = stoi(argv[2]);
-    int delta = stoi(argv[3]); // default delta is 3
+    int delta = stoi(argv[3]);
     int num_threads = stoi(argv[4]);
     omp_set_num_threads(num_threads);
 
-    // load da graph
     cout << "Loading graph from: " << dataset_file_name << endl;
     Graph g;
     try
@@ -1167,7 +1144,7 @@ int main(int argc, char *argv[])
     }
     catch (const exception &e)
     {
-        cerr << "Error loading the graph??" << endl;
+        cerr << "Error loading the graph??\n";
         return 1;
     }
 
@@ -1177,10 +1154,35 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    // preprocessing — build thread-local CSR, timed separately from SSSP
+    vector<vector<int>> local_col_ind(num_threads);
+    vector<vector<int>> local_data(num_threads);
+    vector<vector<long>> local_row_ptr(num_threads);
+
+    auto tp0 = chrono::steady_clock::now();
+#pragma omp parallel num_threads(num_threads)
+    {
+        int tid = omp_get_thread_num();
+        for (int node = tid; node < g.num_nodes; node += num_threads)
+        {
+            local_row_ptr[tid].push_back(local_col_ind[tid].size());
+            for (long idx = g.row_ptr[node]; idx < g.row_ptr[node + 1]; idx++)
+            {
+                local_col_ind[tid].push_back(g.col_ind[idx]);
+                local_data[tid].push_back(g.data[idx]);
+            }
+        }
+        local_row_ptr[tid].push_back(local_col_ind[tid].size());
+    }
+    auto tp1 = chrono::steady_clock::now();
+    double preprocess_elapsed = chrono::duration<double>(tp1 - tp0).count();
+    cout << "  Preprocessing (local CSR build) : " << preprocess_elapsed << " seconds\n";
+
     cout << "Running delta-stepping SSSP from source node: " << source << " (delta=" << delta << ")\n";
     auto t0 = chrono::steady_clock::now();
 
-    vector<double> res = parallel_dijktras(g, source, delta, num_threads);
+    vector<double> res = parallel_dijktras(g, source, delta, num_threads,
+                                           local_col_ind, local_data, local_row_ptr);
 
     auto t1 = chrono::steady_clock::now();
     double elapsed = chrono::duration<double>(t1 - t0).count();
@@ -1192,7 +1194,9 @@ int main(int argc, char *argv[])
     cout << "  Nodes visited    : " << nodes_visited(res) << endl;
     cout << "  Node ID space    : " << g.num_nodes << " (max_node_id + 1)" << endl;
     cout << "  Delta            : " << delta << "\n";
-    cout << "  Elapsed time     : " << elapsed << " seconds\n";
+    cout << "  Preprocessing    : " << preprocess_elapsed << " seconds\n";
+    cout << "  SSSP time        : " << elapsed << " seconds\n";
+    cout << "  Total            : " << preprocess_elapsed + elapsed << " seconds\n";
 
     return 0;
 }
