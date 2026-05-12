@@ -26,6 +26,11 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
 
     // each thread owns nodes where node % nthreads == tid
     vector<unordered_map<int, unordered_set<int>>> tbuckets(nthreads);
+    vector<vector<vector<pair<int, double>>>> outgoing(nthreads, vector<vector<pair<int, double>>>(nthreads));
+
+    // pre-allocate snapshots and local_processed — reused across inner iterations
+    vector<unordered_set<int>> snapshots(nthreads);
+    vector<vector<int>> local_processed(nthreads);
 
     int src_owner = src % nthreads;
     distances[src] = 0.0;
@@ -49,24 +54,26 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
 
         vector<int> processed_nodes;
 
-        // check if any thread has work remaining in bucket b — parallel reduce
+        // check if any thread has work remaining in bucket b
         auto work_available = [&]()
         {
-            int has_work = 0;
-#pragma omp parallel for num_threads(nthreads) reduction(+ : has_work)
             for (int tid = 0; tid < nthreads; tid++)
                 if (tbuckets[tid].count(b) && !tbuckets[tid][b].empty())
-                    has_work++;
-            return has_work > 0;
+                    return true;
+            return false;
         };
 
         // process light edges until bucket b is stable ----------------------------
         while (work_available())
         {
-            // each thread snapshots its own slice of bucket b
-            vector<unordered_set<int>> snapshots(nthreads);
-            vector<vector<int>> local_processed(nthreads);
+            // clear and reuse pre-allocated snapshots and local_processed
+            for (int tid = 0; tid < nthreads; tid++)
+            {
+                snapshots[tid].clear();
+                local_processed[tid].clear();
+            }
 
+            // each thread snapshots its own slice of bucket b
             for (int tid = 0; tid < nthreads; tid++)
             {
                 if (tbuckets[tid].count(b))
@@ -77,7 +84,9 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
             }
 
             // outgoing[src_tid][dest_tid] — thread tid writes only to outgoing[tid]
-            vector<vector<vector<pair<int, double>>>> outgoing(nthreads, vector<vector<pair<int, double>>>(nthreads));
+            for (auto &v : outgoing)
+                for (auto &vv : v)
+                    vv.clear();
 
             double tp0 = omp_get_wtime();
 #pragma omp parallel num_threads(nthreads)
@@ -126,8 +135,7 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
             t_merge += omp_get_wtime() - tm0;
 
             for (int tid = 0; tid < nthreads; tid++)
-                for (int node : local_processed[tid])
-                    processed_nodes.push_back(node);
+                processed_nodes.insert(processed_nodes.end(), local_processed[tid].begin(), local_processed[tid].end());
         }
 
         // bucket b is now stable — clear it from all threads
@@ -135,7 +143,9 @@ vector<double> parallel_dijktras(const Graph &g, int src, int delta, int nthread
             tbuckets[tid].erase(b);
 
         // relax heavy edges from processed nodes (weight > delta) -----------------
-        vector<vector<vector<pair<int, double>>>> outgoing(nthreads, vector<vector<pair<int, double>>>(nthreads));
+        for (auto &v : outgoing)
+            for (auto &vv : v)
+                vv.clear();
 
         double tp0 = omp_get_wtime();
 #pragma omp parallel num_threads(nthreads)
