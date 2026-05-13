@@ -23,6 +23,7 @@ How to run:
 
 // Stores the rank's nodes distance from source node
 static std::vector<int> dists;
+static std::vector<bool> visited;
 // This rank's local frontier (contains node ids in the frontier)
 static std::vector<int> frontier;
 static int start_row;
@@ -35,7 +36,7 @@ static std::vector<int> result;
  *
  */
 void initialize(const Graph &graph, int source, int rank, int num_procs) {
-    auto t0 = std::chrono::steady_clock::now();
+    // auto t0 = std::chrono::steady_clock::now();
 
     int graph_size = graph.num_nodes;
 
@@ -78,18 +79,23 @@ void initialize(const Graph &graph, int source, int rank, int num_procs) {
     for (int i = 0; i < end_row - start_row; ++i) {
         dists[i] = -1; // Signifies a node hasn't been visited
     }
+    visited.resize(graph.num_nodes);
+    for (int i = 0; i < graph.num_nodes; ++i) {
+        visited[i] = false;
+    }
 
     // Create the first frontier
     if (start_row <= source && source < end_row) {
         frontier.push_back(source);
         dists[source - start_row] = 0;
+        visited[source] = true;
     }
 
-    if (rank == 0) {
-        auto t1 = std::chrono::steady_clock::now();
-        double elapsed = std::chrono::duration<double>(t1 - t0).count();
-        std::cout << "Initialize time: " << elapsed*100000 << std::endl;
-    }
+    // if (rank == 0) {
+    //     auto t1 = std::chrono::steady_clock::now();
+    //     double elapsed = std::chrono::duration<double>(t1 - t0).count();
+    //     std::cout << "Initialize time: " << elapsed*100000 << std::endl;
+    // }
 }
 
 // Finds the owner process of a node with binary search
@@ -120,12 +126,12 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
 
     int distance = 1;
 
-    double avg_search_time = 0;
-    double avg_communicate_time = 0;
-    double avg_update_time = 0;
+    // double avg_search_time = 0;
+    // double avg_communicate_time = 0;
+    // double avg_update_time = 0;
 
     while (true) {
-        auto t0 = std::chrono::steady_clock::now();
+        // auto t0 = std::chrono::steady_clock::now();
         // Collects the discovered nodes (outgoing edges from nodes in the frontier)
         // to send to their owner processor
         std::vector<std::vector<int>> discovered_nodes(num_procs);
@@ -134,14 +140,12 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
         for (int u : frontier) {
             for (int edge = g.row_ptr[u]; edge < g.row_ptr[u + 1]; ++edge) {
                 int v = g.col_ind[edge];
-                int owner = get_owner(v);
-                discovered_nodes[owner].push_back(v);
+                if (!visited[v]) {
+                    int owner = get_owner(v);
+                    discovered_nodes[owner].push_back(v);
+                }
             }
         }
-
-        auto t2 = std::chrono::steady_clock::now();
-        double elapsed = std::chrono::duration<double>(t2 - t0).count();
-        avg_search_time += elapsed;
 
         std::vector<int> send_cts(num_procs), send_displacements(num_procs);
         int total_send = 0;
@@ -157,6 +161,10 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
             std::copy(discovered_nodes[i].begin(), discovered_nodes[i].end(),
                 send_data.begin() + send_displacements[i]);
         }
+
+        // auto t2 = std::chrono::steady_clock::now();
+        // double elapsed = std::chrono::duration<double>(t2 - t0).count();
+        // avg_search_time += elapsed;
 
         // Exchange the expected counts to receive/send with all other ranks
         std::vector<int> recv_cts(num_procs);
@@ -178,9 +186,9 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
                     recv_data.data(), recv_cts.data(), recv_displacements.data(), MPI_INT,
                     MPI_COMM_WORLD);
 
-        auto t3 = std::chrono::steady_clock::now();
-        elapsed = std::chrono::duration<double>(t3 - t2).count();
-        avg_communicate_time += elapsed;
+        // auto t3 = std::chrono::steady_clock::now();
+        // elapsed = std::chrono::duration<double>(t3 - t2).count();
+        // avg_communicate_time += elapsed;
 
         // Each processor updates its partition of node distances & creates its new frontier
         // Does an OR operation over the copies of frontiers from all processes 
@@ -206,13 +214,13 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
         frontier.swap(next_frontier);
         distance++;
 
-        auto t1 = std::chrono::steady_clock::now();
-        elapsed = std::chrono::duration<double>(t1 - t3).count();
-        avg_update_time += elapsed;
+        // auto t1 = std::chrono::steady_clock::now();
+        // elapsed = std::chrono::duration<double>(t1 - t3).count();
+        // avg_update_time += elapsed;
     }
-    std::cout << "Rank: " << rank << ". Average search time: " << avg_search_time/distance*100000 << std::endl;
-    std::cout << "Rank: " << rank << ". Average communicate time: " << avg_communicate_time/distance*100000 << std::endl;
-    std::cout << "Rank: " << rank << ". Average update time: " << avg_update_time/distance*100000 << std::endl;
+    // std::cout << "Rank: " << rank << ". Average search time: " << avg_search_time/distance*100000 << std::endl;
+    // std::cout << "Rank: " << rank << ". Average communicate time: " << avg_communicate_time/distance*100000 << std::endl;
+    // std::cout << "Rank: " << rank << ". Average update time: " << avg_update_time/distance*100000 << std::endl;
 }
 
 /**
@@ -233,11 +241,11 @@ void gather_result(int num_nodes, int rank, int num_procs) {
                     NULL, MPI_INT, 0, MPI_COMM_WORLD);
     }
     
-    if (rank == 0) {
-        auto t1 = std::chrono::steady_clock::now();
-        double elapsed = std::chrono::duration<double>(t1 - t0).count();
-        std::cout << "Gather time: " << elapsed*100000 << std::endl;
-    }
+    // if (rank == 0) {
+    //     auto t1 = std::chrono::steady_clock::now();
+    //     double elapsed = std::chrono::duration<double>(t1 - t0).count();
+    //     std::cout << "Gather time: " << elapsed*100000 << std::endl;
+    // }
 }
 
 int main(int argc, char *argv[]) {
