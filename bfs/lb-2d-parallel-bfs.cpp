@@ -9,9 +9,9 @@
 /*
     To run:
     cd bfs
-    salloc -N 1 -C cpu -q interactive -t 01:00:00 -A m4341 -n 4
-    mpicxx -O2 -std=c++23 lb-2d-parallel-bfs.cpp -o lb_2d-parallel
-    srun -n 4 ./lb_2d-parallel ../datasets/soc-LiveJournal1.txt 0
+    salloc -N 1 -C cpu -q interactive -t 01:00:00 -A m4341 -n 1
+    mpicxx -O2 -std=c++23 lb-2d-parallel-bfs.cpp -o lb_2d_bfs_parallel
+    srun -n 4 ./lb_2d_bfs_parallel ../datasets/soc-LiveJournal1.txt 0
 */
 
 void compute_offsets_by_edges(
