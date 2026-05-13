@@ -23,7 +23,7 @@ How to run:
 
 // Stores the rank's nodes distance from source node
 static std::vector<int> dists;
-static std::vector<bool> visited;
+static std::vector<bool> visited; // Visited status of all nodes
 // This rank's local frontier (contains node ids in the frontier)
 static std::vector<int> frontier;
 static int start_row;
@@ -31,6 +31,7 @@ static int end_row; // non-inclusive
 static std::vector<int> displacements;
 static std::vector<int> rows_per_proc;
 static std::vector<int> result;
+static std::vector<int> node_owner; // Maps each node id to its owner process
 
 /**
  *
@@ -40,7 +41,7 @@ void initialize(const Graph &graph, int source, int rank, int num_procs) {
 
     int graph_size = graph.num_nodes;
 
-    if (rank >= graph.num_nodes)
+    if (rank >= graph_size)
         return;
 
     // Divide nodes evenly between processors by balancing number of outgoing edges
@@ -66,23 +67,25 @@ void initialize(const Graph &graph, int source, int rank, int num_procs) {
     }
     rows_per_proc[num_procs - 1] = graph_size - displacements[num_procs - 1];
 
+    node_owner.resize(graph_size);
+    for (int proc = 0; proc < num_procs; ++proc) {
+        for (int v = displacements[proc]; v < displacements[proc] + rows_per_proc[proc]; ++v) {
+            node_owner[v] = proc;
+        }
+    }
+
     // Determine local start and end rows
     start_row = displacements[rank];
     if (displacements.size() - 1 == rank) {
-        end_row = graph.num_nodes;
+        end_row = graph_size;
     } else {
         end_row = displacements[rank + 1];
     }
 
     // Only store distances for this rank's nodes [start_row, end_row]
-    dists.resize(end_row - start_row);
-    for (int i = 0; i < end_row - start_row; ++i) {
-        dists[i] = -1; // Signifies a node hasn't been visited
-    }
-    visited.resize(graph.num_nodes);
-    for (int i = 0; i < graph.num_nodes; ++i) {
-        visited[i] = false;
-    }
+    dists.resize(end_row - start_row, -1); // Initialize with -1 for 'unvisited'
+
+    visited.resize(graph_size, false);
 
     // Create the first frontier
     if (start_row <= source && source < end_row) {
@@ -96,23 +99,6 @@ void initialize(const Graph &graph, int source, int rank, int num_procs) {
     //     double elapsed = std::chrono::duration<double>(t1 - t0).count();
     //     std::cout << "Initialize time: " << elapsed*100000 << std::endl;
     // }
-}
-
-// Finds the owner process of a node with binary search
-int get_owner(int node) {
-    int lo = 0, hi = displacements.size() - 1;
-    while (lo <= hi) {
-        int mid = (lo + hi) / 2;
-        if (node < displacements[mid]) {
-            hi = mid - 1;
-        } else if (mid + 1 < displacements.size() &&
-                   node >= displacements[mid + 1]) {
-            lo = mid + 1;
-        } else {
-            return mid;
-        }
-    }
-    return -1;
 }
 
 /**
@@ -140,9 +126,10 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
         for (int u : frontier) {
             for (int edge = g.row_ptr[u]; edge < g.row_ptr[u + 1]; ++edge) {
                 int v = g.col_ind[edge];
-                if (!visited[v]) {
-                    int owner = get_owner(v);
+                if (!visited[v]) { // Only send nodes that haven't been visited
+                    int owner = node_owner[v];
                     discovered_nodes[owner].push_back(v);
+                    visited[v] = true;
                 }
             }
         }
@@ -199,6 +186,7 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
             if (dists[v - start_row] == -1) {
                 dists[v - start_row] = distance;
                 next_frontier.push_back(v);
+                visited[v] = true;
                 has_frontier = 1;
             }
         }
