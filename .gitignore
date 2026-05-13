@@ -1,5 +1,7 @@
 bfs_serial
 bfs_parallel
+2d_bfs_parallel
+lb_2d_bfs_parallel
 /datasets/*.txt
 build/
 .vscode/

@@ -89,6 +89,7 @@ int main(int argc, char *argv[]) { // argv looks like {./bfs_serial,
               << std::endl;
     std::cout << "  Node ID space    : " << g.num_nodes << " (max_node_id + 1)"
               << std::endl;
+    print_diameter(distances);
     std::cout << "  Elapsed time     : " << elapsed << " seconds\n";
 
     print_distances(distances, 50);
