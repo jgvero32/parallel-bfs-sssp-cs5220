@@ -21,7 +21,7 @@ How to run:
 #include <string>
 #include <vector>
 
-// Stores the distances from source node
+// Stores the rank's nodes distance from source node
 static std::vector<int> dists;
 // This rank's local frontier (contains node ids in the frontier)
 static std::vector<int> frontier;
@@ -39,11 +39,6 @@ void initialize(const Graph &graph, int source, int rank, int num_procs) {
 
     if (rank >= graph.num_nodes)
         return;
-
-    dists.reserve(graph.num_nodes);
-    for (int i = 0; i < graph.num_nodes; ++i) {
-        dists.push_back(-1); // Signifies a node hasn't been visited
-    }
 
     // TODO: load-balancing nodes based on number of outgoing edges
     // Divide nodes evenly between processors
@@ -72,10 +67,16 @@ void initialize(const Graph &graph, int source, int rank, int num_procs) {
         end_row = displacements[rank + 1];
     }
 
+    // Only store distances for this rank's nodes [start_row, end_row]
+    dists.reserve(end_row - start_row);
+    for (int i = 0; i < end_row - start_row; ++i) {
+        dists.push_back(-1); // Signifies a node hasn't been visited
+    }
+
     // Create the first frontier
     if (start_row <= source && source < end_row) {
         frontier.push_back(source);
-        dists[source] = 0;
+        dists[source - start_row] = 0;
     }
 
     if (rank == 0) {
@@ -113,6 +114,10 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
 
     int distance = 1;
 
+    double avg_search_time = 0;
+    double avg_communicate_time = 0;
+    double avg_update_time = 0;
+
     while (true) {
         auto t0 = std::chrono::steady_clock::now();
         // Collects the discovered nodes (outgoing edges from nodes in the frontier)
@@ -130,7 +135,7 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
 
         auto t2 = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration<double>(t2 - t0).count();
-        std::cout << rank << " rank. Search time: " << elapsed*100000 << std::endl;
+        avg_search_time += elapsed;
 
         std::vector<int> send_cts(num_procs), send_displacements(num_procs);
         int total_send = 0;
@@ -167,11 +172,9 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
                     recv_data.data(), recv_cts.data(), recv_displacements.data(), MPI_INT,
                     MPI_COMM_WORLD);
 
-        if (rank == 0) {
-            auto t3 = std::chrono::steady_clock::now();
-            double elapsed = std::chrono::duration<double>(t3 - t2).count();
-            std::cout << "Communication time: " << elapsed*100000 << std::endl;
-        }
+        auto t3 = std::chrono::steady_clock::now();
+        elapsed = std::chrono::duration<double>(t3 - t2).count();
+        avg_communicate_time += elapsed;
 
         // Each processor updates its partition of node distances & creates its new frontier
         // Does an OR operation over the copies of frontiers from all processes 
@@ -179,8 +182,8 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
         int has_frontier = 0;
 
         for (int v : recv_data) {
-            if (dists[v] == -1) {
-                dists[v] = distance;
+            if (dists[v - start_row] == -1) {
+                dists[v - start_row] = distance;
                 next_frontier.push_back(v);
                 has_frontier = 1;
             }
@@ -197,12 +200,13 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
         frontier.swap(next_frontier);
         distance++;
 
-        if (rank == 0) {
-            auto t1 = std::chrono::steady_clock::now();
-            double elapsed = std::chrono::duration<double>(t1 - t0).count();
-            std::cout << "Total loop time: " << elapsed*100000 << std::endl;
-        }
+        auto t1 = std::chrono::steady_clock::now();
+        elapsed = std::chrono::duration<double>(t1 - t3).count();
+        avg_update_time += elapsed;
     }
+    std::cout << "Rank: " << rank << ". Average search time: " << avg_search_time/distance*100000 << std::endl;
+    std::cout << "Rank: " << rank << ". Average communicate time: " << avg_communicate_time/distance*100000 << std::endl;
+    std::cout << "Rank: " << rank << ". Average update time: " << avg_update_time/distance*100000 << std::endl;
 }
 
 /**
@@ -212,18 +216,14 @@ void gather_result(int num_nodes, int rank, int num_procs) {
     auto t0 = std::chrono::steady_clock::now();
     if (rank >= num_nodes)
         return;
-    // TODO: can I just use a pointer to start index instead of making a new
-    // vector?
-    std::vector<int> rank_dists(dists.begin() + start_row,
-                                dists.begin() + end_row);
 
     if (rank == 0) {
         result.resize(num_nodes);
-        MPI_Gatherv(rank_dists.data(), rank_dists.size(), MPI_INT,
+        MPI_Gatherv(dists.data(), dists.size(), MPI_INT,
                     result.data(), rows_per_proc.data(), displacements.data(),
                     MPI_INT, 0, MPI_COMM_WORLD);
     } else {
-        MPI_Gatherv(rank_dists.data(), rank_dists.size(), MPI_INT, NULL, NULL,
+        MPI_Gatherv(dists.data(), dists.size(), MPI_INT, NULL, NULL,
                     NULL, MPI_INT, 0, MPI_COMM_WORLD);
     }
     
