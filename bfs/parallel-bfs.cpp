@@ -1,7 +1,4 @@
 /*
-In progress...
-
-
 Parallel BFS for roadNet-CA
 How to run:
    Create an interactive session on Perlmutter
@@ -16,7 +13,6 @@ How to run:
 #include <chrono>
 #include <iostream>
 #include <mpi.h>
-#include <omp.h>
 #include <queue>
 #include <string>
 #include <vector>
@@ -34,11 +30,10 @@ static std::vector<int> result;
 static std::vector<int> node_owner; // Maps each node id to its owner process
 
 /**
- *
+ * Splits nodes of the graph between processors, then initializes other
+ * vectors used for collective communication and distance-tracking
  */
 void initialize(const Graph &graph, int source, int rank, int num_procs) {
-    // auto t0 = std::chrono::steady_clock::now();
-
     int graph_size = graph.num_nodes;
 
     if (rank >= graph_size)
@@ -93,12 +88,6 @@ void initialize(const Graph &graph, int source, int rank, int num_procs) {
         dists[source - start_row] = 0;
         visited[source] = true;
     }
-
-    // if (rank == 0) {
-    //     auto t1 = std::chrono::steady_clock::now();
-    //     double elapsed = std::chrono::duration<double>(t1 - t0).count();
-    //     std::cout << "Initialize time: " << elapsed*100000 << std::endl;
-    // }
 }
 
 /**
@@ -112,12 +101,7 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
 
     int distance = 1;
 
-    // double avg_search_time = 0;
-    // double avg_communicate_time = 0;
-    // double avg_update_time = 0;
-
     while (true) {
-        // auto t0 = std::chrono::steady_clock::now();
         // Collects the discovered nodes (outgoing edges from nodes in the frontier)
         // to send to their owner processor
         std::vector<std::vector<int>> discovered_nodes(num_procs);
@@ -149,10 +133,6 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
                 send_data.begin() + send_displacements[i]);
         }
 
-        // auto t2 = std::chrono::steady_clock::now();
-        // double elapsed = std::chrono::duration<double>(t2 - t0).count();
-        // avg_search_time += elapsed;
-
         // Exchange the expected counts to receive/send with all other ranks
         std::vector<int> recv_cts(num_procs);
         MPI_Alltoall(send_cts.data(), 1, MPI_INT, recv_cts.data(), 1,
@@ -172,10 +152,6 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
         MPI_Alltoallv(send_data.data(), send_cts.data(), send_displacements.data(), MPI_INT,
                     recv_data.data(), recv_cts.data(), recv_displacements.data(), MPI_INT,
                     MPI_COMM_WORLD);
-
-        // auto t3 = std::chrono::steady_clock::now();
-        // elapsed = std::chrono::duration<double>(t3 - t2).count();
-        // avg_communicate_time += elapsed;
 
         // Each processor updates its partition of node distances & creates its new frontier
         // Does an OR operation over the copies of frontiers from all processes 
@@ -201,21 +177,13 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
 
         frontier.swap(next_frontier);
         distance++;
-
-        // auto t1 = std::chrono::steady_clock::now();
-        // elapsed = std::chrono::duration<double>(t1 - t3).count();
-        // avg_update_time += elapsed;
     }
-    // std::cout << "Rank: " << rank << ". Average search time: " << avg_search_time/distance*100000 << std::endl;
-    // std::cout << "Rank: " << rank << ". Average communicate time: " << avg_communicate_time/distance*100000 << std::endl;
-    // std::cout << "Rank: " << rank << ". Average update time: " << avg_update_time/distance*100000 << std::endl;
 }
 
 /**
  * Gathers the partitions of the dists vector onto rank 0
  */
 void gather_result(int num_nodes, int rank, int num_procs) {
-    auto t0 = std::chrono::steady_clock::now();
     if (rank >= num_nodes)
         return;
 
@@ -228,12 +196,6 @@ void gather_result(int num_nodes, int rank, int num_procs) {
         MPI_Gatherv(dists.data(), dists.size(), MPI_INT, NULL, NULL,
                     NULL, MPI_INT, 0, MPI_COMM_WORLD);
     }
-    
-    // if (rank == 0) {
-    //     auto t1 = std::chrono::steady_clock::now();
-    //     double elapsed = std::chrono::duration<double>(t1 - t0).count();
-    //     std::cout << "Gather time: " << elapsed*100000 << std::endl;
-    // }
 }
 
 int main(int argc, char *argv[]) {
