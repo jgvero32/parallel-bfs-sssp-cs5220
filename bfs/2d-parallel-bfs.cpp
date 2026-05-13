@@ -72,6 +72,7 @@ std::vector<int> bfs_2d_mpi(
         // This is the partial SpMV part of the process!
         partial_spmv_result.assign(total_my_rows, 0); // zero out partial_spmv_result every level iteration
         for (int i = 0; i < total_my_rows; i++) {
+            if (local_dist[i] != -1) continue; // don't go through already visited rows
             // this is basically ANDing to matrix multiply
             for (int index = local_row_ptr[i]; index < local_row_ptr[i + 1]; index++) { // for each "from" edge in row i -> aka when the element in the submatrix is 1
                 if (local_frontier[local_col_ind[index]]) { // if the element local_frontier[local_col_ind[index]] is 1, then we can set the partial_spmv_result for this row to have 1 
