@@ -9,7 +9,7 @@
 /*
     To run:
     cd bfs
-    salloc -N 1 -C cpu -q interactive -t 01:00:00 -A m4341 -n 4
+    salloc -N 1 -C cpu -q interactive -t 01:00:00 -A m4341 -n 1
     mpicxx -O2 -std=c++23 2d-parallel-bfs.cpp -o 2d_bfs_parallel
     srun -n 4 ./2d_bfs_parallel ../datasets/soc-LiveJournal1.txt 0
 */
