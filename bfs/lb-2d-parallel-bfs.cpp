@@ -10,9 +10,105 @@
     To run:
     cd bfs
     salloc -N 1 -C cpu -q interactive -t 01:00:00 -A m4341 -n 4
-    mpicxx -O2 -std=c++23 2d-parallel-bfs.cpp -o 2d_bfs_parallel
-    srun -n 4 ./2d_bfs_parallel ../datasets/soc-LiveJournal1.txt 0
+    mpicxx -O2 -std=c++23 lb-2d-parallel-bfs.cpp -o lb_2d-parallel
+    srun -n 4 ./lb_2d-parallel ../datasets/soc-LiveJournal1.txt 0
 */
+
+void compute_offsets_by_edges(
+    const std::vector<int>& row_ptr, int n, int parts,
+    std::vector<int>& offsets)
+{
+    offsets.resize(parts + 1);
+    offsets[0] = 0;
+    int total_edges = row_ptr[n];
+    int target = (total_edges + parts - 1) / parts;
+
+    int p = 1;
+    for (int i = 0; i < n && p < parts; i++) {
+        if (row_ptr[i + 1] >= target * p) {
+            offsets[p++] = i + 1;
+        }
+    }
+    // fill any remaining partitions (can happen if trailing nodes have 0 edges)
+    while (p <= parts)
+        offsets[p++] = n;
+}
+
+void compute_offsets_by_nodes(int total, int parts, std::vector<int>& offsets)
+{
+    offsets.resize(parts + 1);
+    offsets[0] = 0;
+    int base = total / parts; // base number of vertices per processor
+    int remainder = total % parts; // num left we need to give away
+    for (int i = 0; i < parts; i++) {
+        int stripe_size = base;
+        if (i < remainder) {
+            stripe_size++;
+        }
+        offsets[i + 1] = offsets[i] + stripe_size;
+    }
+}
+
+void degree_aware_reorder(
+    const std::vector<int>& row_ptr, int n, int pr,
+    std::vector<int>& new_to_old,
+    std::vector<int>& old_to_new)
+{
+    // compute degree of each node
+    std::vector<int> degree(n);
+    for (int i = 0; i < n; i++)
+        degree[i] = row_ptr[i + 1] - row_ptr[i];
+
+    // sort by degree descending
+    std::vector<int> order(n);
+    std::iota(order.begin(), order.end(), 0);
+    std::sort(order.begin(), order.end(), [&](int a, int b){
+        return degree[a] > degree[b];
+    });
+
+    // round robin so each bucket gets an even mix of heavy and light nodes
+    std::vector<std::vector<int>> buckets(pr);
+    for (int i = 0; i < n; i++)
+        buckets[i % pr].push_back(order[i]);
+
+    new_to_old.resize(n);
+    old_to_new.resize(n);
+    int new_id = 0;
+    for (int r = 0; r < pr; r++) {
+        for (int v : buckets[r]) {
+            new_to_old[new_id] = v;
+            old_to_new[v] = new_id++;
+        }
+    }
+}
+
+void apply_permutation(
+    Graph& g,
+    const std::vector<int>& new_to_old,
+    const std::vector<int>& old_to_new)
+{
+    int n = g.num_nodes;
+
+    // remap col_ind endpoints (the "to" nodeIDs) to their new IDs
+    for (int& c : g.col_ind)
+        c = old_to_new[c];
+
+    // rebuild row_ptr and col_ind in the new row order
+    std::vector<int> new_row_ptr(n + 1, 0);
+    std::vector<int> new_col_ind;
+    new_col_ind.reserve(g.col_ind.size());
+
+    for (int new_i = 0; new_i < n; new_i++) {
+        int old_i = new_to_old[new_i];
+        int deg = g.row_ptr[old_i + 1] - g.row_ptr[old_i];
+        new_row_ptr[new_i + 1] = new_row_ptr[new_i] + deg;
+        for (int j = g.row_ptr[old_i]; j < g.row_ptr[old_i + 1]; j++)
+            new_col_ind.push_back(g.col_ind[j]); // col_ind already remapped above
+    }
+
+    g.row_ptr = new_row_ptr;
+    g.col_ind = new_col_ind;
+}
 
 // sets local_row_ptr and local_col_ind to contain a CSR version of the submatrix for the current processor
 void build_local_submatrix(
@@ -52,7 +148,7 @@ std::vector<int> bfs_2d_mpi(
     int comm_size = pr * pc;
 
     std::vector<int> local_dist(total_my_rows, -1); // stores the distance of each "to" nodeID this processor owns
-    std::vector<int> local_frontier(total_my_columns, 0); // frontier contains 1 or 0 for all "from" nodeIDs are in the current frontier 
+    std::vector<int> local_frontier(total_my_columns, 0); // frontier contains 1 or 0 for all "from" nodeIDs are in the current frontier
 
     // seeds the source vertex into the local_dist and local_frontier vectors in their correct (adjusted) spot
     if (src >= row_start && src < row_start + total_my_rows)
@@ -62,7 +158,7 @@ std::vector<int> bfs_2d_mpi(
 
     int bfs_level = 1;
     std::vector<int> partial_spmv_result(total_my_rows); // this holds the SpMV result of the current process (before row communication)
-    std::vector<int> reduced_result(total_my_rows); // this holds the combined vector addition result (after row communication) 
+    std::vector<int> reduced_result(total_my_rows); // this holds the combined vector addition result (after row communication)
     std::vector<int> local_new_verts;
     std::vector<int> all_counts(comm_size);
     std::vector<int> displacements(comm_size);
@@ -72,10 +168,10 @@ std::vector<int> bfs_2d_mpi(
         // This is the partial SpMV part of the process!
         partial_spmv_result.assign(total_my_rows, 0); // zero out partial_spmv_result every level iteration
         for (int i = 0; i < total_my_rows; i++) {
-            if (local_dist[i] != -1) continue; // don't go through already visited rows
+            if (local_dist[i] != -1) continue;  // don't go through already visited rows
             // this is basically ANDing to matrix multiply
             for (int index = local_row_ptr[i]; index < local_row_ptr[i + 1]; index++) { // for each "from" edge in row i -> aka when the element in the submatrix is 1
-                if (local_frontier[local_col_ind[index]]) { // if the element local_frontier[local_col_ind[index]] is 1, then we can set the partial_spmv_result for this row to have 1 
+                if (local_frontier[local_col_ind[index]]) { // if the element local_frontier[local_col_ind[index]] is 1, then we can set the partial_spmv_result for this row to have 1
                     partial_spmv_result[i] = 1;
                     break; // break bc we've already set it to 1 and don't need to calculate the other ANDs
                 }
@@ -93,7 +189,6 @@ std::vector<int> bfs_2d_mpi(
                 local_new_verts.push_back(row_start + i);
             }
         }
-
 
         int local_count = local_new_verts.size();
         MPI_Allgather(&local_count, 1, MPI_INT, all_counts.data(), 1, MPI_INT, comm); // every process shares the number of new vertices it found with all other processes
@@ -132,11 +227,9 @@ std::vector<int> bfs_2d_mpi(
         if (processor_row == 0) {
             full_dist.resize(n, -1);
             MPI_Gatherv(local_dist.data(), total_my_rows, MPI_INT, full_dist.data(), recvcounts.data(), gv_displs.data(), MPI_INT, 0, col_comm);
-
         }
         else {
             MPI_Gatherv(local_dist.data(), total_my_rows, MPI_INT, nullptr, recvcounts.data(), gv_displs.data(), MPI_INT, 0, col_comm);
-
         }
     }
     return full_dist;
@@ -159,6 +252,8 @@ int main(int argc, char** argv) {
 
     Graph g;
     const std::string dataset_file_name = argv[1];
+    int source = std::stoi(argv[2]);
+
     if (rank == 0) {
         // only rank 0 loads da graph so we don't have contention over the file
         std::cout << "Loading graph from: " << dataset_file_name << std::endl;
@@ -167,29 +262,20 @@ int main(int argc, char** argv) {
             std::cout << "n=" << g.num_nodes << " total_num_edges=" << g.row_ptr[g.num_nodes] << std::endl;
         } catch (const std::exception &e) {
             std::cerr << "Error loading the graph??" << std::endl;
+            MPI_Abort(MPI_COMM_WORLD, 1);
             return 1;
         }
     }
 
     MPI_Bcast(&g.num_nodes, 1, MPI_INT, 0, MPI_COMM_WORLD); // send num_nodes
-    if (rank != 0) {
-        g.row_ptr.resize(g.num_nodes + 1);
-    }
-    MPI_Bcast(g.row_ptr.data(), g.num_nodes + 1, MPI_INT, 0, MPI_COMM_WORLD); // send row_ptr vector
-    int total_num_edges = g.row_ptr[g.num_nodes];
-    if (rank != 0) {
-        g.col_ind.resize(total_num_edges);
-    }
-    MPI_Bcast(g.col_ind.data(), total_num_edges, MPI_INT, 0, MPI_COMM_WORLD); // send col_ind vector
 
     int n = g.num_nodes;
-    int source = std::stoi(argv[2]);
 
     int pr = (int)std::sqrt((double)size); // number of process rows is sqrt(num_processes)
     while (size % pr != 0) { // keep decreasing pr until you get a number that is divisible by the size -> ex. 32 processes sqrt(32)= 5.656 -> 5 -> 5-1=4 -> pr = 4
         pr--;
     }
-    int pc = size / pr; // number of processor columns 
+    int pc = size / pr; // number of processor columns
     int processor_row = rank / pc; // gets processor row in 2d grid
     int processor_column = rank % pc; // gets processor column in 2d grid
 
@@ -200,24 +286,34 @@ int main(int argc, char** argv) {
     MPI_Comm_split(MPI_COMM_WORLD, processor_row, rank, &row_comm); // this groups processors in the same processor row together -> when they try to communicate with MPI_Comm of row_comm, it will only be with other processors communicating through row_comm
     MPI_Comm_split(MPI_COMM_WORLD, processor_column, rank, &col_comm); // same as comment above but for col_comm
 
+    // node reordering
+    std::vector<int> new_to_old, old_to_new;
+    if (rank == 0) {
+        degree_aware_reorder(g.row_ptr, n, pr, new_to_old, old_to_new);
+        apply_permutation(g, new_to_old, old_to_new);
+        source = old_to_new[source]; // remap source to new ID space
+    }
 
-    auto compute_offsets = [](int total, int parts, std::vector<int>& offsets) {
-        offsets.resize(parts + 1);
-        offsets[0] = 0;
-        int base = total / parts; // base number of vertices per processor 
-        int remainder = total % parts; // num left we need to give away
-        for (int i = 0; i < parts; i++) {
-            int stripe_size = base;
-            if (i < remainder) {
-                stripe_size++;
-            }
-            offsets[i + 1] = offsets[i] + stripe_size;
-        }
-    };
+    // broadcast the permuted graph
+    if (rank != 0)
+        g.row_ptr.resize(n + 1);
+    MPI_Bcast(g.row_ptr.data(), n + 1, MPI_INT, 0, MPI_COMM_WORLD); // send row_ptr vector
+
+    int total_num_edges = g.row_ptr[n];
+    if (rank != 0)
+        g.col_ind.resize(total_num_edges);
+    MPI_Bcast(g.col_ind.data(), total_num_edges, MPI_INT, 0, MPI_COMM_WORLD); // send col_ind vector
+
+    MPI_Bcast(&source, 1, MPI_INT, 0, MPI_COMM_WORLD); // send remapped source
+
+    // broadcast new_to_old so rank 0 can remap distances back to original
+    if (rank != 0)
+        new_to_old.resize(n);
+    MPI_Bcast(new_to_old.data(), n, MPI_INT, 0, MPI_COMM_WORLD);
 
     std::vector<int> to_vertices_range, from_vertices_range;
-    compute_offsets(g.num_nodes, pr, to_vertices_range); // tells us the range of "to" vertices each processor owns [0, 10, 20...]
-    compute_offsets(g.num_nodes, pc, from_vertices_range); // tells us the range of "from" vertices each processor owns: [0, 10, 20...]
+    compute_offsets_by_edges(g.row_ptr, n, pr, to_vertices_range); // edge-balanced rows
+    compute_offsets_by_nodes(n, pc, from_vertices_range); // node-balanced cols
 
     int row_start  = to_vertices_range[processor_row]; // gives us this processor's first "to" nodeID
     int total_my_rows = to_vertices_range[processor_row + 1] - row_start; // gives us the number of "to" vertices in a processor's row -> aka how many rows a processor owns
@@ -235,23 +331,29 @@ int main(int argc, char** argv) {
     g.col_ind.clear();
     g.col_ind.shrink_to_fit();
 
-    // MPI_Barrier(MPI_COMM_WORLD); // wait for all processes to have completed this for fair bfs timing 
+    // MPI_Barrier(MPI_COMM_WORLD); // wait for all processes to have completed this for fair bfs timing
 
-    auto dist = bfs_2d_mpi(
-    local_row_ptr, local_col_ind,
-    g.num_nodes, source,
-    total_my_rows, total_my_columns,
-    row_start, col_start,
-    MPI_COMM_WORLD, row_comm, col_comm,
-    processor_row, processor_column, pr, pc,
-    to_vertices_range);
+    auto dist_permuted = bfs_2d_mpi(
+        local_row_ptr, local_col_ind,
+        n, source,
+        total_my_rows, total_my_columns,
+        row_start, col_start,
+        MPI_COMM_WORLD, row_comm, col_comm,
+        processor_row, processor_column, pr, pc,
+        to_vertices_range);
 
     MPI_Barrier(MPI_COMM_WORLD);
     double t1 = MPI_Wtime();
 
     if (rank == 0) {
+        // remap distances from permuted IDs back to original node IDs
+        std::vector<int> dist(n, -1);
+        for (int new_id = 0; new_id < n; new_id++) {
+            dist[new_to_old[new_id]] = dist_permuted[new_id];
+        }
+
         std::cout << "\n----- 2D BFS -----\n";
-        std::cout << "Source node   : " << source << std::endl;
+        std::cout << "Source node   : " << std::stoi(argv[2]) << " (original ID)" << std::endl;
         std::cout << "Nodes visited : " << nodes_visited(dist) << std::endl;
         std::cout << "Time          : " << (t1 - t0) << " sec" << std::endl;
         print_distances(dist, 50);

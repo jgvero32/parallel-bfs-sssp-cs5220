@@ -1,7 +1,4 @@
 /*
-In progress...
-
-
 Parallel BFS for roadNet-CA
 How to run:
    Create an interactive session on Perlmutter
@@ -16,13 +13,13 @@ How to run:
 #include <chrono>
 #include <iostream>
 #include <mpi.h>
-#include <omp.h>
 #include <queue>
 #include <string>
 #include <vector>
 
-// Stores the distances from source node
+// Stores the rank's nodes distance from source node
 static std::vector<int> dists;
+static std::vector<bool> visited; // Visited status of all nodes
 // This rank's local frontier (contains node ids in the frontier)
 static std::vector<int> frontier;
 static int start_row;
@@ -30,68 +27,67 @@ static int end_row; // non-inclusive
 static std::vector<int> displacements;
 static std::vector<int> rows_per_proc;
 static std::vector<int> result;
+static std::vector<int> node_owner; // Maps each node id to its owner process
 
 /**
- *
+ * Splits nodes of the graph between processors, then initializes other
+ * vectors used for collective communication and distance-tracking
  */
 void initialize(const Graph &graph, int source, int rank, int num_procs) {
-    if (rank >= graph.num_nodes)
+    int graph_size = graph.num_nodes;
+
+    if (rank >= graph_size)
         return;
 
-    dists.reserve(graph.num_nodes);
-    for (int i = 0; i < graph.num_nodes; ++i) {
-        dists.push_back(-1); // Signifies a node hasn't been visited
+    // Divide nodes evenly between processors by balancing number of outgoing edges
+    displacements.resize(num_procs);
+    rows_per_proc.resize(num_procs);
+    displacements[0] = 0;
+
+    int graph_edges = graph.num_edges;
+    int ideal_edges = (graph_edges + num_procs - 1) / num_procs;
+
+    int next_proc_to_assign = 1;
+    for (int node_id = 0; node_id < graph_size && next_proc_to_assign < num_procs; ++node_id) {
+        if (graph.row_ptr[node_id] >= next_proc_to_assign * ideal_edges) {
+            displacements[next_proc_to_assign++] = node_id;
+        }
+    }
+    while (next_proc_to_assign < num_procs) {
+        displacements[next_proc_to_assign++] = graph_size;
     }
 
-    // TODO: load-balancing nodes based on number of outgoing edges
-    // Divide nodes evenly between processors
-    int base_rows = graph.num_nodes / num_procs;
-    int remainder_rows =
-        graph.num_nodes % num_procs; // Number of ranks with extra row
-    displacements.reserve(num_procs);
-    rows_per_proc.reserve(num_procs);
+    for (int p = 0; p < num_procs - 1; ++p) {
+        rows_per_proc[p] = displacements[p + 1] - displacements[p];
+    }
+    rows_per_proc[num_procs - 1] = graph_size - displacements[num_procs - 1];
 
-    int disp = 0;
-    for (int i = 0; i < num_procs; ++i) {
-        displacements.push_back(disp);
-        if (i < remainder_rows) {
-            disp += base_rows + 1;
-            rows_per_proc.push_back(base_rows + 1);
-        } else {
-            disp += base_rows;
-            rows_per_proc.push_back(base_rows);
+    node_owner.resize(graph_size);
+    for (int proc = 0; proc < num_procs; ++proc) {
+        for (int v = displacements[proc]; v < displacements[proc] + rows_per_proc[proc]; ++v) {
+            node_owner[v] = proc;
         }
     }
 
+    // Determine local start and end rows
     start_row = displacements[rank];
     if (displacements.size() - 1 == rank) {
-        end_row = graph.num_nodes;
+        end_row = graph_size;
     } else {
         end_row = displacements[rank + 1];
     }
 
+    // Only store distances for this rank's nodes [start_row, end_row]
+    dists.resize(end_row - start_row, -1); // Initialize with -1 for 'unvisited'
+
+    visited.resize(graph_size, false);
+
     // Create the first frontier
     if (start_row <= source && source < end_row) {
         frontier.push_back(source);
-        dists[source] = 0;
+        dists[source - start_row] = 0;
+        visited[source] = true;
     }
-}
-
-// Finds the owner process of a node with binary search
-int get_owner(int node) {
-    int lo = 0, hi = displacements.size() - 1;
-    while (lo <= hi) {
-        int mid = (lo + hi) / 2;
-        if (node < displacements[mid]) {
-            hi = mid - 1;
-        } else if (mid + 1 < displacements.size() &&
-                   node >= displacements[mid + 1]) {
-            lo = mid + 1;
-        } else {
-            return mid;
-        }
-    }
-    return -1;
 }
 
 /**
@@ -114,8 +110,11 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
         for (int u : frontier) {
             for (int edge = g.row_ptr[u]; edge < g.row_ptr[u + 1]; ++edge) {
                 int v = g.col_ind[edge];
-                int owner = get_owner(v);
-                discovered_nodes[owner].push_back(v);
+                if (!visited[v]) { // Only send nodes that haven't been visited
+                    int owner = node_owner[v];
+                    discovered_nodes[owner].push_back(v);
+                    visited[v] = true;
+                }
             }
         }
 
@@ -160,9 +159,10 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
         int has_frontier = 0;
 
         for (int v : recv_data) {
-            if (dists[v] == -1) {
-                dists[v] = distance;
+            if (dists[v - start_row] == -1) {
+                dists[v - start_row] = distance;
                 next_frontier.push_back(v);
+                visited[v] = true;
                 has_frontier = 1;
             }
         }
@@ -186,18 +186,14 @@ void parallel_bfs(const Graph &g, int rank, int num_procs) {
 void gather_result(int num_nodes, int rank, int num_procs) {
     if (rank >= num_nodes)
         return;
-    // TODO: can I just use a pointer to start index instead of making a new
-    // vector?
-    std::vector<int> rank_dists(dists.begin() + start_row,
-                                dists.begin() + end_row);
 
     if (rank == 0) {
         result.resize(num_nodes);
-        MPI_Gatherv(rank_dists.data(), rank_dists.size(), MPI_INT,
+        MPI_Gatherv(dists.data(), dists.size(), MPI_INT,
                     result.data(), rows_per_proc.data(), displacements.data(),
                     MPI_INT, 0, MPI_COMM_WORLD);
     } else {
-        MPI_Gatherv(rank_dists.data(), rank_dists.size(), MPI_INT, NULL, NULL,
+        MPI_Gatherv(dists.data(), dists.size(), MPI_INT, NULL, NULL,
                     NULL, MPI_INT, 0, MPI_COMM_WORLD);
     }
 }
@@ -265,6 +261,7 @@ int main(int argc, char *argv[]) {
                   << std::endl;
         std::cout << "  Node ID space    : " << g.num_nodes
                   << " (max_node_id + 1)" << std::endl;
+        print_diameter(result);
         std::cout << "  Elapsed time     : " << elapsed << " seconds\n";
 
         print_distances(result, 50);
