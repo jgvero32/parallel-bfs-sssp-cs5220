@@ -37,29 +37,35 @@ static std::vector<int> result;
 void initialize(const Graph &graph, int source, int rank, int num_procs) {
     auto t0 = std::chrono::steady_clock::now();
 
+    int graph_size = graph.num_nodes;
+
     if (rank >= graph.num_nodes)
         return;
 
-    // TODO: load-balancing nodes based on number of outgoing edges
-    // Divide nodes evenly between processors
-    int base_rows = graph.num_nodes / num_procs;
-    int remainder_rows =
-        graph.num_nodes % num_procs; // Number of ranks with extra row
-    displacements.reserve(num_procs);
-    rows_per_proc.reserve(num_procs);
+    // Divide nodes evenly between processors by balancing number of outgoing edges
+    displacements.resize(num_procs);
+    rows_per_proc.resize(num_procs);
+    displacements[0] = 0;
 
-    int disp = 0;
-    for (int i = 0; i < num_procs; ++i) {
-        displacements.push_back(disp);
-        if (i < remainder_rows) {
-            disp += base_rows + 1;
-            rows_per_proc.push_back(base_rows + 1);
-        } else {
-            disp += base_rows;
-            rows_per_proc.push_back(base_rows);
+    int graph_edges = graph.num_edges;
+    int ideal_edges = (graph_edges + num_procs - 1) / num_procs;
+
+    int next_proc_to_assign = 1;
+    for (int node_id = 0; node_id < graph_size && next_proc_to_assign < num_procs; ++node_id) {
+        if (graph.row_ptr[node_id] >= next_proc_to_assign * ideal_edges) {
+            displacements[next_proc_to_assign++] = node_id;
         }
     }
+    while (next_proc_to_assign < num_procs) {
+        displacements[next_proc_to_assign++] = graph_size;
+    }
 
+    for (int p = 0; p < num_procs - 1; ++p) {
+        rows_per_proc[p] = displacements[p + 1] - displacements[p];
+    }
+    rows_per_proc[num_procs - 1] = graph_size - displacements[num_procs - 1];
+
+    // Determine local start and end rows
     start_row = displacements[rank];
     if (displacements.size() - 1 == rank) {
         end_row = graph.num_nodes;
@@ -68,9 +74,9 @@ void initialize(const Graph &graph, int source, int rank, int num_procs) {
     }
 
     // Only store distances for this rank's nodes [start_row, end_row]
-    dists.reserve(end_row - start_row);
+    dists.resize(end_row - start_row);
     for (int i = 0; i < end_row - start_row; ++i) {
-        dists.push_back(-1); // Signifies a node hasn't been visited
+        dists[i] = -1; // Signifies a node hasn't been visited
     }
 
     // Create the first frontier
