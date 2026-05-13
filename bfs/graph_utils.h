@@ -122,3 +122,14 @@ int nodes_visited(const std::vector<int> dists) {
     }
     return visited_ct;
 }
+
+void print_diameter(const std::vector<int> dists) {
+    int max_dist = 0;
+    for (int i = 0; i < dists.size(); ++i) {
+        if (dists[i] > max_dist) {
+            max_dist = dists[i];
+        }
+    }
+    std::cout << " Graph diameter    : " << max_dist
+            << std::endl;
+}
