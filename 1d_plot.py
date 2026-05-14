@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 plt.figure()
 plt.xlabel('Processor Count')
 plt.ylabel('Simulation Time (seconds)')
-plt.title('1D Parallel BFS Time vs Number of Processors (Balanced)')
+plt.title('1D Parallel BFS Time vs Number of Processes (Balanced)')
 
 # Data for both basic and load-balanced BFS are here
 # Switch (SW) shows where to swap roadNet and roadNet_balanced
@@ -24,6 +24,7 @@ ideal_roadNet = [roadNet_balanced[0], roadNet_balanced[0]/64]
 # SW
 ideal_liveJournal = [liveJournal_balanced[0], liveJournal_balanced[0]/64]
 
+plt.ylim((10e-4, 10e-1))
 plt.xscale("log", base=2)
 plt.yscale("log", base=10)
 
@@ -41,5 +42,5 @@ plt.plot(x, liveJournal_balanced, color = "orange", marker='s', markersize=4, la
 plt.plot(ideal_x, ideal_liveJournal, color = "orange", linestyle="--", label = "Ideal soc-LiveJournal1")
 plt.legend()
 
-out_fname = "1d_bfs_plot.svg"
+out_fname = "1d_bfs_plot_balanced.svg"
 plt.savefig(out_fname, bbox_inches='tight')
