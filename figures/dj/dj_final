@@ -1,0 +1,587 @@
+===== Serial Dijkstra =====
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+Running serial dijkstra from source node: 0
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Serial dijkstra Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Elapsed time     : 3.57222 seconds
+
+===== Parallel Delta-Stepping (delta=25) =====
+----- 1 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.412747 seconds
+Running delta-stepping SSSP from source node: 0 (delta=25)
+  [timing] parallel relaxation : 5.09099s
+  [timing] parallel merge      : 0.269345s
+  [timing] find min bucket     : 3.70312e-05s
+  [timing] work_available      : 4.8331e-06s
+  [timing] snapshot            : 0.0926852s
+  [timing] outgoing clear      : 8.07261e-05s
+  [timing] flatten processed   : 0.00551272s
+  [timing] bucket erase        : 1.09617e-05s
+  [timing] parallel fraction   : 94.9752%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 25
+  Preprocessing    : 0.412747 seconds
+  SSSP time        : 5.46266 seconds
+  Total            : 5.87541 seconds
+  Effective bandwidth : 0.707284 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 0.176821%
+  Effective GFLOPS : 0.126301
+
+----- 2 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.916793 seconds
+Running delta-stepping SSSP from source node: 0 (delta=25)
+  [timing] parallel relaxation : 2.64539s
+  [timing] parallel merge      : 0.186856s
+  [timing] find min bucket     : 7.18692e-05s
+  [timing] work_available      : 9.7123e-06s
+  [timing] snapshot            : 0.110592s
+  [timing] outgoing clear      : 0.000253414s
+  [timing] flatten processed   : 0.00591014s
+  [timing] bucket erase        : 3.34657e-05s
+  [timing] parallel fraction   : 93.4026%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 25
+  Preprocessing    : 0.916793 seconds
+  SSSP time        : 2.95351 seconds
+  Total            : 3.8703 seconds
+  Effective bandwidth : 1.30816 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 0.327039%
+  Effective GFLOPS : 0.2336
+
+----- 4 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 2.00421 seconds
+Running delta-stepping SSSP from source node: 0 (delta=25)
+  [timing] parallel relaxation : 1.54543s
+  [timing] parallel merge      : 0.12937s
+  [timing] find min bucket     : 0.000127157s
+  [timing] work_available      : 2.02707e-05s
+  [timing] snapshot            : 0.102536s
+  [timing] outgoing clear      : 0.000468648s
+  [timing] flatten processed   : 0.00558111s
+  [timing] bucket erase        : 5.82444e-05s
+  [timing] parallel fraction   : 92.2755%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 25
+  Preprocessing    : 2.00421 seconds
+  SSSP time        : 1.78809 seconds
+  Total            : 3.7923 seconds
+  Effective bandwidth : 2.16077 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 0.540193%
+  Effective GFLOPS : 0.385852
+
+----- 8 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 1.7247 seconds
+Running delta-stepping SSSP from source node: 0 (delta=25)
+  [timing] parallel relaxation : 0.694748s
+  [timing] parallel merge      : 0.0673328s
+  [timing] find min bucket     : 0.000185573s
+  [timing] work_available      : 1.1785e-05s
+  [timing] snapshot            : 0.0539422s
+  [timing] outgoing clear      : 0.000609166s
+  [timing] flatten processed   : 0.00601335s
+  [timing] bucket erase        : 8.34591e-05s
+  [timing] parallel fraction   : 91.1646%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 25
+  Preprocessing    : 1.7247 seconds
+  SSSP time        : 0.827575 seconds
+  Total            : 2.55227 seconds
+  Effective bandwidth : 4.66864 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 1.16716%
+  Effective GFLOPS : 0.833686
+
+----- 16 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 1.18261 seconds
+Running delta-stepping SSSP from source node: 0 (delta=25)
+  [timing] parallel relaxation : 0.334199s
+  [timing] parallel merge      : 0.0369329s
+  [timing] find min bucket     : 0.000321009s
+  [timing] work_available      : 2.08821e-05s
+  [timing] snapshot            : 0.0360922s
+  [timing] outgoing clear      : 0.000906975s
+  [timing] flatten processed   : 0.00694978s
+  [timing] bucket erase        : 0.000120579s
+  [timing] parallel fraction   : 90.0486%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 25
+  Preprocessing    : 1.18261 seconds
+  SSSP time        : 0.420735 seconds
+  Total            : 1.60335 seconds
+  Effective bandwidth : 9.18311 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 2.29578%
+  Effective GFLOPS : 1.63984
+
+----- 32 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.586964 seconds
+Running delta-stepping SSSP from source node: 0 (delta=25)
+  [timing] parallel relaxation : 0.191679s
+  [timing] parallel merge      : 0.0231314s
+  [timing] find min bucket     : 0.000524414s
+  [timing] work_available      : 3.53418e-05s
+  [timing] snapshot            : 0.0196388s
+  [timing] outgoing clear      : 0.00123728s
+  [timing] flatten processed   : 0.00687573s
+  [timing] bucket erase        : 0.00016071s
+  [timing] parallel fraction   : 89.2318%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 25
+  Preprocessing    : 0.586964 seconds
+  SSSP time        : 0.24932 seconds
+  Total            : 0.836284 seconds
+  Effective bandwidth : 15.4968 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 3.87419%
+  Effective GFLOPS : 2.76728
+
+----- 64 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.368685 seconds
+Running delta-stepping SSSP from source node: 0 (delta=25)
+  [timing] parallel relaxation : 0.129422s
+  [timing] parallel merge      : 0.0236826s
+  [timing] find min bucket     : 0.000970047s
+  [timing] work_available      : 3.84492e-05s
+  [timing] snapshot            : 0.0114521s
+  [timing] outgoing clear      : 0.00187231s
+  [timing] flatten processed   : 0.00715348s
+  [timing] bucket erase        : 0.000260253s
+  [timing] parallel fraction   : 84.5317%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 25
+  Preprocessing    : 0.368685 seconds
+  SSSP time        : 0.182753 seconds
+  Total            : 0.551438 seconds
+  Effective bandwidth : 21.1414 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 5.28534%
+  Effective GFLOPS : 3.77525
+
+----- 96 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.273929 seconds
+Running delta-stepping SSSP from source node: 0 (delta=25)
+  [timing] parallel relaxation : 0.102539s
+  [timing] parallel merge      : 0.0226564s
+  [timing] find min bucket     : 0.00208867s
+  [timing] work_available      : 3.97381e-05s
+  [timing] snapshot            : 0.00943152s
+  [timing] outgoing clear      : 0.00258185s
+  [timing] flatten processed   : 0.00841641s
+  [timing] bucket erase        : 0.000323536s
+  [timing] parallel fraction   : 81.9031%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 25
+  Preprocessing    : 0.273929 seconds
+  SSSP time        : 0.158384 seconds
+  Total            : 0.432313 seconds
+  Effective bandwidth : 24.3942 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 6.09855%
+  Effective GFLOPS : 4.35611
+
+----- 128 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.210673 seconds
+Running delta-stepping SSSP from source node: 0 (delta=25)
+  [timing] parallel relaxation : 0.0899996s
+  [timing] parallel merge      : 0.0253117s
+  [timing] find min bucket     : 0.00139642s
+  [timing] work_available      : 4.58369e-05s
+  [timing] snapshot            : 0.0101014s
+  [timing] outgoing clear      : 0.00405748s
+  [timing] flatten processed   : 0.00921932s
+  [timing] bucket erase        : 0.000500396s
+  [timing] parallel fraction   : 78.0492%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 25
+  Preprocessing    : 0.210673 seconds
+  SSSP time        : 0.155421 seconds
+  Total            : 0.366094 seconds
+  Effective bandwidth : 24.8593 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 6.21481%
+  Effective GFLOPS : 4.43915
+
+----- 256 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.164517 seconds
+Running delta-stepping SSSP from source node: 0 (delta=25)
+  [timing] parallel relaxation : 0.0773956s
+  [timing] parallel merge      : 0.0269826s
+  [timing] find min bucket     : 0.00882206s
+  [timing] work_available      : 5.62398e-05s
+  [timing] snapshot            : 0.0242206s
+  [timing] outgoing clear      : 0.0210838s
+  [timing] flatten processed   : 0.0125223s
+  [timing] bucket erase        : 0.00096076s
+  [timing] parallel fraction   : 74.1492%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 25
+  Preprocessing    : 0.164517 seconds
+  SSSP time        : 0.204578 seconds
+  Total            : 0.369096 seconds
+  Effective bandwidth : 18.8859 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 4.72148%
+  Effective GFLOPS : 3.37248
+
+sabrinaj@nid006635:~/parallel-bfs-sssp-cs5220> vi benchmark.sh 
+sabrinaj@nid006635:~/parallel-bfs-sssp-cs5220> ./benchmark.sh 
+===== Serial Dijkstra =====
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+Running serial dijkstra from source node: 0
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Serial dijkstra Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Elapsed time     : 3.51068 seconds
+
+===== Parallel Delta-Stepping (delta=50) =====
+----- 1 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.412513 seconds
+Running delta-stepping SSSP from source node: 0 (delta=50)
+  [timing] parallel relaxation : 11.3848s
+  [timing] parallel merge      : 0.534966s
+  [timing] find min bucket     : 2.23112e-05s
+  [timing] work_available      : 3.83006e-06s
+  [timing] snapshot            : 0.15752s
+  [timing] outgoing clear      : 6.58948e-05s
+  [timing] flatten processed   : 0.0223769s
+  [timing] bucket erase        : 5.9912e-06s
+  [timing] parallel fraction   : 95.5119%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 50
+  Preprocessing    : 0.412513 seconds
+  SSSP time        : 12.1042 seconds
+  Total            : 12.5167 seconds
+  Effective bandwidth : 0.319199 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 0.0797998%
+  Effective GFLOPS : 0.0569999
+
+----- 2 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.971042 seconds
+Running delta-stepping SSSP from source node: 0 (delta=50)
+  [timing] parallel relaxation : 5.85536s
+  [timing] parallel merge      : 0.374545s
+  [timing] find min bucket     : 4.4649e-05s
+  [timing] work_available      : 5.6331e-06s
+  [timing] snapshot            : 0.193657s
+  [timing] outgoing clear      : 0.000189694s
+  [timing] flatten processed   : 0.0206291s
+  [timing] bucket erase        : 1.74744e-05s
+  [timing] parallel fraction   : 93.988%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 50
+  Preprocessing    : 0.971042 seconds
+  SSSP time        : 6.44985 seconds
+  Total            : 7.42089 seconds
+  Effective bandwidth : 0.59903 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 0.149757%
+  Effective GFLOPS : 0.10697
+
+----- 4 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 2.53083 seconds
+Running delta-stepping SSSP from source node: 0 (delta=50)
+  [timing] parallel relaxation : 3.33397s
+  [timing] parallel merge      : 0.252897s
+  [timing] find min bucket     : 7.10608e-05s
+  [timing] work_available      : 1.12155e-05s
+  [timing] snapshot            : 0.172828s
+  [timing] outgoing clear      : 0.000352422s
+  [timing] flatten processed   : 0.0127425s
+  [timing] bucket erase        : 3.08915e-05s
+  [timing] parallel fraction   : 92.9494%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 50
+  Preprocessing    : 2.53083 seconds
+  SSSP time        : 3.77816 seconds
+  Total            : 6.30899 seconds
+  Effective bandwidth : 1.02263 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 0.255657%
+  Effective GFLOPS : 0.182612
+
+----- 8 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 1.79922 seconds
+Running delta-stepping SSSP from source node: 0 (delta=50)
+  [timing] parallel relaxation : 1.49588s
+  [timing] parallel merge      : 0.131012s
+  [timing] find min bucket     : 0.000109804s
+  [timing] work_available      : 1.33896e-05s
+  [timing] snapshot            : 0.0936482s
+  [timing] outgoing clear      : 0.000460892s
+  [timing] flatten processed   : 0.0128903s
+  [timing] bucket erase        : 4.35137e-05s
+  [timing] parallel fraction   : 91.9471%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 50
+  Preprocessing    : 1.79922 seconds
+  SSSP time        : 1.73832 seconds
+  Total            : 3.53753 seconds
+  Effective bandwidth : 2.22264 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 0.55566%
+  Effective GFLOPS : 0.3969
+
+----- 16 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 1.18683 seconds
+Running delta-stepping SSSP from source node: 0 (delta=50)
+  [timing] parallel relaxation : 0.72619s
+  [timing] parallel merge      : 0.0677139s
+  [timing] find min bucket     : 0.000163628s
+  [timing] work_available      : 2.18865e-05s
+  [timing] snapshot            : 0.0665741s
+  [timing] outgoing clear      : 0.00064401s
+  [timing] flatten processed   : 0.0135219s
+  [timing] bucket erase        : 6.47451e-05s
+  [timing] parallel fraction   : 91.4708%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 50
+  Preprocessing    : 1.18683 seconds
+  SSSP time        : 0.879349 seconds
+  Total            : 2.06618 seconds
+  Effective bandwidth : 4.39376 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 1.09844%
+  Effective GFLOPS : 0.7846
+
+----- 32 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.561675 seconds
+Running delta-stepping SSSP from source node: 0 (delta=50)
+  [timing] parallel relaxation : 0.423714s
+  [timing] parallel merge      : 0.0428529s
+  [timing] find min bucket     : 0.000244453s
+  [timing] work_available      : 2.1758e-05s
+  [timing] snapshot            : 0.034031s
+  [timing] outgoing clear      : 0.000951139s
+  [timing] flatten processed   : 0.0141806s
+  [timing] bucket erase        : 8.44253e-05s
+  [timing] parallel fraction   : 90.8153%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 50
+  Preprocessing    : 0.561675 seconds
+  SSSP time        : 0.521551 seconds
+  Total            : 1.08323 seconds
+  Effective bandwidth : 7.408 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 1.852%
+  Effective GFLOPS : 1.32286
+
+----- 64 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.367338 seconds
+Running delta-stepping SSSP from source node: 0 (delta=50)
+  [timing] parallel relaxation : 0.300415s
+  [timing] parallel merge      : 0.0469358s
+  [timing] find min bucket     : 0.000415673s
+  [timing] work_available      : 1.43857e-05s
+  [timing] snapshot            : 0.0191784s
+  [timing] outgoing clear      : 0.0016744s
+  [timing] flatten processed   : 0.0125077s
+  [timing] bucket erase        : 0.0001392s
+  [timing] parallel fraction   : 86.4875%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 50
+  Preprocessing    : 0.367338 seconds
+  SSSP time        : 0.388364 seconds
+  Total            : 0.755702 seconds
+  Effective bandwidth : 9.94854 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 2.48713%
+  Effective GFLOPS : 1.77652
+
+----- 96 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.263816 seconds
+Running delta-stepping SSSP from source node: 0 (delta=50)
+  [timing] parallel relaxation : 0.172714s
+  [timing] parallel merge      : 0.0360151s
+  [timing] find min bucket     : 0.000534988s
+  [timing] work_available      : 2.4193e-05s
+  [timing] snapshot            : 0.0143734s
+  [timing] outgoing clear      : 0.00183122s
+  [timing] flatten processed   : 0.0154719s
+  [timing] bucket erase        : 0.000169027s
+  [timing] parallel fraction   : 82.7455%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 50
+  Preprocessing    : 0.263816 seconds
+  SSSP time        : 0.249635 seconds
+  Total            : 0.513451 seconds
+  Effective bandwidth : 15.4772 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 3.8693%
+  Effective GFLOPS : 2.76379
+
+----- 128 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.22507 seconds
+Running delta-stepping SSSP from source node: 0 (delta=50)
+  [timing] parallel relaxation : 0.18887s
+  [timing] parallel merge      : 0.0386406s
+  [timing] find min bucket     : 0.00231927s
+  [timing] work_available      : 2.86838e-05s
+  [timing] snapshot            : 0.0136748s
+  [timing] outgoing clear      : 0.00264268s
+  [timing] flatten processed   : 0.0150022s
+  [timing] bucket erase        : 0.000214559s
+  [timing] parallel fraction   : 83.0159%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 50
+  Preprocessing    : 0.22507 seconds
+  SSSP time        : 0.272762 seconds
+  Total            : 0.497832 seconds
+  Effective bandwidth : 14.1649 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 3.54123%
+  Effective GFLOPS : 2.52945
+
+----- 256 thread(s) -----
+Loading graph from: ./datasets/soc-LiveJournal1-weighted.txt
+  Preprocessing (local CSR build) : 0.155928 seconds
+Running delta-stepping SSSP from source node: 0 (delta=50)
+  [timing] parallel relaxation : 0.136375s
+  [timing] parallel merge      : 0.039447s
+  [timing] find min bucket     : 0.00886356s
+  [timing] work_available      : 4.1083e-05s
+  [timing] snapshot            : 0.0252184s
+  [timing] outgoing clear      : 0.0123322s
+  [timing] flatten processed   : 0.0170287s
+  [timing] bucket erase        : 0.000518234s
+  [timing] parallel fraction   : 77.5642%
+[0, 16, 15, 4, 25, 17, 25, 15, 18, 20, 14, 18, 17, 18, 12, 30, 26, 5, 4, 12, 21, 25, 44, 24, 4, 46, 23, 25, 18, 18]
+
+----- Parallel SSSP Results -----
+  Source node      : 0
+  Nodes visited    : 4400347
+  Node ID space    : 4847571 (max_node_id + 1)
+  Delta            : 50
+  Preprocessing    : 0.155928 seconds
+  SSSP time        : 0.266662 seconds
+  Total            : 0.42259 seconds
+  Effective bandwidth : 14.4889 GB/s
+  Peak node bandwidth  : ~400 GB/s (2x EPYC 7763)
+  Bandwidth utilization: 3.62223%
+  Effective GFLOPS : 2.58731
+
+sabrinaj@nid006635:~/parallel-bfs-sssp-cs5220> 
