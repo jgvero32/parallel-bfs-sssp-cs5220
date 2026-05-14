@@ -9,7 +9,7 @@
 /*
     To run:
     cd bfs
-    salloc -N 1 -C cpu -q interactive -t 01:00:00 -A m4341 -n 1
+    salloc -N 1 -C cpu -q interactive -t 01:00:00 -A m4341 -n 4
     mpicxx -O2 -std=c++23 lb-2d-parallel-bfs.cpp -o lb_2d_bfs_parallel
     srun -n 4 ./lb_2d_bfs_parallel ../datasets/soc-LiveJournal1.txt 0
 */
@@ -320,7 +320,6 @@ int main(int argc, char** argv) {
     int col_start  = from_vertices_range[processor_column]; // gives us this processor's first "from" nodeID
     int total_my_columns = from_vertices_range[processor_column + 1] - col_start; // gives us the number of "from" vertices in a processor's column -> aka how many columns a processor owns
 
-    double t0 = MPI_Wtime();
 
     std::vector<int> local_row_ptr, local_col_ind;
     build_local_submatrix(g.row_ptr, g.col_ind, row_start, total_my_rows, col_start, total_my_columns, local_row_ptr, local_col_ind); // put CSR submatrix for this processor into local_row_ptr and local_col_ind
@@ -332,7 +331,7 @@ int main(int argc, char** argv) {
     g.col_ind.shrink_to_fit();
 
     // MPI_Barrier(MPI_COMM_WORLD); // wait for all processes to have completed this for fair bfs timing
-
+    double t0 = MPI_Wtime();
     auto dist_permuted = bfs_2d_mpi(
         local_row_ptr, local_col_ind,
         n, source,
