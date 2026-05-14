@@ -20,8 +20,8 @@ ideal_x = [1, 64]
 ideal_roadNet = [4.76532, 4.76532/64]
 ideal_liveJournal = [0.656489, 0.656489/64]
 
-plt.xscale("log", base=2)
-plt.yscale("log", base=2)
+plt.xscale("log", base=10)
+plt.yscale("log", base=10)
 
 
 plt.plot([1], [serial_roadNet], marker='*', markersize = 12, linestyle='None',
